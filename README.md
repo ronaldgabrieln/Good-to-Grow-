@@ -11,7 +11,28 @@ npm install
 npm run dev          # tool at http://localhost:5173
 npm test             # engine tests (FAO-56 checks, rules, full replay on Maneadero data)
 npm run demo-data    # re-download the bundled Maneadero dataset (NASA POWER + SoilGrids)
+npm run serve        # production build + preview server (includes the agent endpoint)
 ```
+
+For the planning agent, copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`. The key is read only by the local server and never reaches the browser. Without it, the rest of the app works and the agent panel says it isn't set up.
+
+## Planning agent: "Ask about your plan"
+
+A chat drawer on the results screen where the farmer talks through their options in Spanish or English: "¿Por qué esta opción?", "What if I keep tomato every year?", "¿Qué hago este otoño?", "What could go wrong?".
+
+**How it's built**
+- `server/agentPlugin.ts` adds `POST /api/agent` to the Vite dev and preview servers. It holds the key and fixes the model (`claude-opus-5-5`, effort `medium`), the system prompt, the tools and size limits. The browser can only send conversation turns (user/assistant), and responses stream back as Server-Sent Events. Refusals fall back to another model server-side (`fallbacks: "default"`), and the fixed prompt and tools are prompt-cached.
+- The loop runs in the browser ([useAgent.ts](src/agent/useAgent.ts)) because the tools need the engine state there. Each tool call runs against the engine in a separate worker ([toolHandlers.ts](src/agent/toolHandlers.ts)). There are at most 8 tool rounds per question, and history is rolled back if a question fails half-way.
+- 8 tools ([toolDefs.ts](src/agent/toolDefs.ts)): `get_field_overview`, `get_options`, `evaluate_rotation` (what-if), `compare_rotations`, `test_climate`, `crop_info`, `season_plan`, `show_on_land` (drives the 3D view).
+
+**How it stays grounded**
+1. Data only comes from tools. The system prompt ([systemPrompt.ts](src/agent/systemPrompt.ts)) forbids figures that aren't in a tool result and sends pesticides, diagnosis, prices, credit and legal questions to the agronomist.
+2. Code does the math: tools return rounded figures and precomputed % changes and differences, so the model only quotes them.
+3. Inputs are constrained: strict schemas with crop-id enums, re-validated in the browser. Bad input comes back as an error result instead of running.
+4. Every answer gets a unit-aware number check ([grounding.ts](src/agent/grounding.ts)): numbers not found in this conversation's tool results (with the same unit) are underlined and counted under the answer.
+5. Transparency: each answer has a "What I checked" step list and its data sources.
+
+**Limits:** it needs internet and a key, and costs per question (2–5 API calls; the server logs token use per call). It only knows what the engine knows (coarse NASA grid, modeled soil, placeholder income index, no sensors yet). The conversation is lost on refresh and there's a single user. The number check verifies figures, not every sentence. The server has no auth, so run it locally only.
 
 ## The farmer's flow
 

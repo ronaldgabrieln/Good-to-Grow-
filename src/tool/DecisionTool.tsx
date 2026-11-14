@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CROP_BY_ID,
   DEFAULT_PRIORITIES,
@@ -16,6 +16,8 @@ import {
   type Strategy,
   type StrategyType,
 } from '../engine'
+import type { AgentContext } from '../agent/toolHandlers'
+import { AgentPanel } from './AgentPanel'
 import { BrandLogo, HomeButton } from './Brand'
 import { ClimatePanel } from './ClimatePanel'
 import { ComparisonTable } from './ComparisonTable'
@@ -28,6 +30,7 @@ import { StrategyCardView } from './StrategyCardView'
 import { Terrain3D, type TerrainLayer } from './terrain/Terrain3D'
 import type { Terrain } from './terrain/terrain'
 import { useEngine } from './useEngine'
+import { useEvaluator } from './useEvaluator'
 import './tool.css'
 
 /** Plain names a farmer understands. */
@@ -194,6 +197,26 @@ export default function DecisionTool(props: {
   const base = strategies.find((s) => s.type === 'current')?.metrics ?? null
   const selected = strategies.find((s) => s.type === selectedType) ?? strategies.find((s) => s.type !== 'current') ?? strategies[0]
 
+  // The planning agent reads the latest results through this ref (tools run against the engine).
+  const evaluate = useEvaluator()
+  const agentContext = useRef<AgentContext | null>(null)
+  useEffect(() => {
+    agentContext.current = result
+      ? {
+          result,
+          input,
+          evaluate,
+          showOnLand: (option, layerKey) => {
+            if (!result.strategies.some((s) => s.type === option)) return `The option "${option}" is not on screen right now.`
+            setSelectedType(option)
+            setLayer(layerKey)
+            return terrain ? null : 'The 3D view is still loading; the option is selected and will show when it is ready.'
+          },
+        }
+      : null
+  }, [result, input, evaluate, terrain])
+  const getAgentContext = useCallback(() => agentContext.current, [])
+
   const openDetails = () => {
     setShowDetails(true)
     requestAnimationFrame(() => detailsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
@@ -271,6 +294,8 @@ export default function DecisionTool(props: {
           </section>
         </div>
       )}
+
+      {result && <AgentPanel getContext={getAgentContext} />}
 
       {result && showDetails && (
         <div className="tool-body details" ref={detailsRef}>

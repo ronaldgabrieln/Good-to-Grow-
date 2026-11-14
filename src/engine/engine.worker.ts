@@ -1,12 +1,19 @@
 // Runs the rotation engine off the main thread so sliders stay responsive.
-import { runEngine, type EngineInput } from './index'
+//   { id, input }                         → full run (candidate search + shortlist)
+//   { id, kind: 'evaluate', input, items } → replay specific rotations (used by the planning agent)
+import { evaluateSlots, runEngine, type EngineInput } from './index'
+import type { Scenario, Slots } from './types'
 
-self.onmessage = (e: MessageEvent<{ id: number; input: EngineInput }>) => {
-  const { id, input } = e.data
+type Request =
+  | { id: number; kind?: 'run'; input: EngineInput }
+  | { id: number; kind: 'evaluate'; input: EngineInput; items: { slots: Slots; scenario?: Scenario }[] }
+
+self.onmessage = (e: MessageEvent<Request>) => {
+  const req = e.data
   try {
-    const result = runEngine(input)
-    self.postMessage({ id, result })
+    if (req.kind === 'evaluate') self.postMessage({ id: req.id, evaluations: evaluateSlots(req.input, req.items) })
+    else self.postMessage({ id: req.id, result: runEngine(req.input) })
   } catch (err) {
-    self.postMessage({ id, error: (err as Error).message ?? String(err) })
+    self.postMessage({ id: req.id, error: (err as Error).message ?? String(err) })
   }
 }
