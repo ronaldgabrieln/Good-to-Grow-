@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ANALYSIS_START_YEAR, DEFAULT_CURRENT, DEFAULT_FIELD, loadFieldData, type FieldData, type FieldInput, type LoadStep, type Slots } from '../engine'
+import { ANALYSIS_START_YEAR, DEFAULT_CURRENT, DEFAULT_FIELD, DEFAULT_PRIORITIES, loadFieldData, type FieldData, type FieldInput, type LoadStep, type Priorities, type Slots } from '../engine'
 import { CropPicker } from './CropPicker'
 import DecisionTool from './DecisionTool'
 import { findFrames, type Frame } from './landsatFrames'
 import { LoadingScreen } from './LoadingScreen'
 import { MapPicker, type PickedPoint } from './MapPicker'
+import { PriorityPicker } from './PriorityPicker'
 import { loadTerrain, type Terrain } from './terrain/terrain'
 import './flow.css'
 
-type Stage = 'pick' | 'crops' | 'analyzing' | 'results'
+type Stage = 'pick' | 'crops' | 'priorities' | 'analyzing' | 'results'
 
 const STEP_TEXT: Record<LoadStep | 'engine' | 'start', string> = {
   start: 'Getting ready…',
@@ -32,6 +33,7 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
   const [field, setField] = useState<FieldInput>(DEFAULT_FIELD)
   const [data, setData] = useState<FieldData | null>(null)
   const [current, setCurrent] = useState<Slots>(DEFAULT_CURRENT)
+  const [priorities, setPriorities] = useState<Priorities>(DEFAULT_PRIORITIES)
   /** The crop question starts empty until the farmer has answered it once. */
   const [answered, setAnswered] = useState(false)
   const [terrain, setTerrain] = useState<Terrain | null>(null)
@@ -56,9 +58,10 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
   }
   useEffect(() => releaseFrames, [])
 
-  const analyze = useCallback((slots: Slots) => {
+  const analyze = useCallback((slots: Slots, prios: Priorities) => {
     if (!picked) return
     setCurrent(slots)
+    setPriorities(prios)
     setAnswered(true)
     releaseFrames()
     const ctrl = new AbortController()
@@ -136,7 +139,7 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
 
   return (
     <>
-      {(stage === 'pick' || stage === 'crops') && (
+      {(stage === 'pick' || stage === 'crops' || stage === 'priorities') && (
         <MapPicker
           initialCenter={picked ?? { lat: DEFAULT_FIELD.lat, lon: DEFAULT_FIELD.lon }}
           initialZoom={picked ? 15 : 13}
@@ -144,16 +147,29 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
           onPick={setPicked}
           onSetLocation={() => setStage('crops')}
           onHome={onHome}
-          dimmed={stage === 'crops'}
+          dimmed={stage !== 'pick'}
         />
       )}
-      {stage === 'crops' && <CropPicker initial={answered ? current : []} onDone={analyze} onBack={() => setStage('pick')} />}
+      {stage === 'crops' && (
+        <CropPicker
+          initial={answered ? current : []}
+          onDone={(slots) => {
+            setCurrent(slots)
+            setStage('priorities')
+          }}
+          onBack={() => setStage('pick')}
+        />
+      )}
+      {stage === 'priorities' && (
+        <PriorityPicker initial={priorities} onDone={(p) => analyze(current, p)} onBack={() => setStage('crops')} />
+      )}
       {(stage === 'analyzing' || stage === 'results') && data && (
         <DecisionTool
           key={`${field.lat},${field.lon}`}
           data={data}
           initialField={field}
           initialCurrent={current}
+          initialPriorities={priorities}
           terrain={terrain}
           terrainError={terrainError}
           frames={frames}

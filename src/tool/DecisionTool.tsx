@@ -107,7 +107,39 @@ function SeasonStrip({ slots }: { slots: Slots }) {
   )
 }
 
-function OptionCard(props: { s: Strategy; base: RotationMetrics | null; selected: boolean; onSelect: () => void }) {
+/** Hand-drawn little glyphs for the option tiles (stroke only, drawn in white on the tile). */
+function TileIcon({ type }: { type: StrategyType }) {
+  const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 3.2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
+  return (
+    <svg viewBox="0 0 48 48" aria-hidden width="100%" height="100%">
+      {type === 'current' && (
+        <g {...common}>
+          <path d="M6 34c10-6 26-6 36 0" />
+          <path d="M6 25c10-6 26-6 36 0" />
+          <path d="M6 16c10-6 26-6 36 0" />
+        </g>
+      )}
+      {type === 'small-change' && (
+        <g {...common}>
+          <path d="M24 40V22" />
+          <path d="M24 26c-8 0-12-5-12-11 8 0 12 4 12 11z" />
+          <path d="M24 22c0-6 4-10 12-10 0 6-4 10-12 10z" />
+          <path d="M10 41h28" />
+        </g>
+      )}
+      {type === 'best' && <path {...common} d="M24 6l5.4 11.2 12.2 1.6-8.9 8.5 2.2 12.1L24 33.5l-10.9 5.9 2.2-12.1-8.9-8.5 12.2-1.6z" />}
+      {type === 'different' && (
+        <g {...common}>
+          <path d="M9 18h20l-5-6M9 18l5 6" />
+          <path d="M39 30H19l5 6M39 30l-5-6" />
+        </g>
+      )}
+    </svg>
+  )
+}
+
+/** The big top half of the card: what the picked option is, and why. */
+function OptionHero(props: { s: Strategy; base: RotationMetrics | null }) {
   const { s } = props
   const isCurrent = s.type === 'current'
   const stats = isCurrent ? [] : plainStats(s.metrics, props.base)
@@ -116,14 +148,14 @@ function OptionCard(props: { s: Strategy; base: RotationMetrics | null; selected
     s.card.why.find((w) => /protect|fixes|fix nitrogen/.test(w)) ??
     (isCurrent ? 'This is what you told us you plant now.' : s.card.why.find((w) => /Smallest step|different approach/.test(w)))
   return (
-    <article className={`option ${props.selected ? 'is-selected' : ''} option-${s.type}`}>
-      <button type="button" className="option-head" onClick={props.onSelect} aria-pressed={props.selected}>
-        <span className="option-title">{PLAIN_TITLE[s.type]}</span>
-        <span className="option-show">{props.selected ? 'Shown on the land' : 'Show on the land'}</span>
-      </button>
+    <div className={`choice-hero hero-${s.type}`} key={s.type} aria-live="polite">
+      <div className="hero-top">
+        <span className="hero-pill hero-pill--title">{PLAIN_TITLE[s.type]}</span>
+        <span className="hero-pill">Shown on the land</span>
+      </div>
       <SeasonStrip slots={s.rotation.slots} />
       {stats.length > 0 && (
-        <ul className="option-stats">
+        <ul className="hero-stats">
           {stats.map((st) => (
             <li key={st.label} className={`tone-${st.tone}`}>
               <span className="stat-icon" aria-hidden>
@@ -135,13 +167,20 @@ function OptionCard(props: { s: Strategy; base: RotationMetrics | null; selected
           ))}
         </ul>
       )}
-      {props.selected && (
-        <div className="option-more">
-          {reason && <p>{reason}</p>}
-          {!isCurrent && <p className="option-ext">{s.card.extension}</p>}
-        </div>
-      )}
-    </article>
+      {reason && <p className="hero-reason">{reason}</p>}
+      {!isCurrent && <p className="option-ext">{s.card.extension}</p>}
+    </div>
+  )
+}
+
+function OptionTile(props: { s: Strategy; selected: boolean; onSelect: () => void }) {
+  return (
+    <button type="button" className={`tile tile-${props.s.type} ${props.selected ? 'is-on' : ''}`} aria-pressed={props.selected} onClick={props.onSelect}>
+      <span className="tile-icon">
+        <TileIcon type={props.s.type} />
+      </span>
+      <span className="tile-label">{PLAIN_TITLE[props.s.type]}</span>
+    </button>
   )
 }
 
@@ -149,6 +188,7 @@ export default function DecisionTool(props: {
   data: FieldData
   initialField: FieldInput
   initialCurrent: Slots
+  initialPriorities?: Priorities
   terrain: Terrain | null
   terrainError: string | null
   frames: Frame[]
@@ -160,7 +200,7 @@ export default function DecisionTool(props: {
   const { data, frames, onChangeLocation, onFirstResult, terrain } = props
   const [field, setField] = useState<FieldInput>(props.initialField)
   const [current, setCurrent] = useState<Slots>(props.initialCurrent)
-  const [priorities, setPriorities] = useState<Priorities>(DEFAULT_PRIORITIES)
+  const [priorities, setPriorities] = useState<Priorities>(props.initialPriorities ?? DEFAULT_PRIORITIES)
   const [scenario, setScenario] = useState<Scenario>(DEFAULT_SCENARIO)
   const [selectedType, setSelectedType] = useState<StrategyType>('best')
   const [layer, setLayer] = useState<TerrainLayer>('erosion')
@@ -280,11 +320,16 @@ export default function DecisionTool(props: {
                 </button>
               ))}
             </div>
-            <div className={`options ${running ? 'is-stale' : ''}`}>
-              {strategies.map((s) => (
-                <OptionCard key={s.type} s={s} base={base} selected={selected === s} onSelect={() => setSelectedType(s.type)} />
-              ))}
-            </div>
+            {selected && (
+              <div className={`choice-card ${running ? 'is-stale' : ''}`}>
+                <OptionHero s={selected} base={base} />
+                <div className="choice-tiles" role="group" aria-label="Pick a way to plant">
+                  {strategies.map((s) => (
+                    <OptionTile key={s.type} s={s} selected={selected === s} onSelect={() => setSelectedType(s.type)} />
+                  ))}
+                </div>
+              </div>
+            )}
             <button type="button" className="btn details-btn" onClick={() => (showDetails ? setShowDetails(false) : openDetails())} aria-expanded={showDetails}>
               {showDetails ? 'Hide the details' : 'See all the details'}
             </button>
