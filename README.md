@@ -15,9 +15,11 @@ npm run demo-data    # re-download the bundled Maneadero dataset (NASA POWER + S
 
 ## The farmer's flow
 
-1. **Pick the field on a map.** Satellite map (MapLibre + Esri World Imagery). Tap your field or use "Use my location", then press "Analyze this field".
-2. **"Analyzing your farm…"**: a full-screen timelapse of that exact spot, one clear **Landsat** image per year from **1995 (the first year of the weather analysis) to today**, played once, strictly in order, with a fixed frame (no zoom or pan). If a year is still loading the timelapse waits for it; years with no usable image are skipped; results open only after the last image has been shown. It comes with a year timeline, a progress bar that follows the real steps (NASA POWER → SoilGrids → rotation replay → images), and the *los carbones* letters popping in one by one ([LoadingScreen.tsx](src/tool/LoadingScreen.tsx), letters in [public/engine-assets/](public/engine-assets/)).
-3. **Results**: climate history, *Your field from space* filmstrip, rotation calendar, trade-off table and strategy cards. "Change field" goes back to the map.
+1. **Landing → "3d visual"** opens the planner.
+2. **Pick the field on a map** and press **Set location**.
+3. **"What are you planting now?"** The farmer types crop names (English or Spanish); matches appear after a 1-second pause. They only say *which* crops they grow; the tool works out the seasons ([CropPicker.tsx](src/tool/CropPicker.tsx)).
+4. **"Analyzing your farm…"**: a Landsat timelapse of the spot from 1995 to today plays once, in order, while the engine runs.
+5. **Results, kept simple**: a **3D model of 6 × 6 km of land around the field** (NASA SRTM elevation with a satellite photo on top) with three layers: *soil washing away* (the selected option's modeled soil loss spread over the land by slope), *where water runs* (D8 flow paths) and *just the photo*. Next to it are a few plain cards (*What you do now*, *A small change*, *Best for you*, *Another way*), each with a season strip and "uses X% less water / earns Y% less / protects the soil better". **See all the details** opens the full report (climate, Landsat filmstrip, calendar, trade-off table, evidence cards, method).
 
 Frames come from the NASA/USGS Landsat Collection 2 archive on Microsoft Planetary Computer, which is keyless and works from the browser ([landsatFrames.ts](src/tool/landsatFrames.ts)). For each year a STAC search finds scenes over the field (autumn first, then any month). The app keeps a scene whose footprint covers the whole frame with the fewest clouds, and the tiler crops every frame to the same bounding box. Landsat 7 scenes after its 2003 scan-line failure are skipped (black stripes), so **2012 has no image**; the timeline marks it as missing. Google Earth Engine could make the same timelapse, but it needs a Google Cloud project, OAuth or a service account, and a server.
 

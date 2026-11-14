@@ -22,6 +22,7 @@ export { loadFieldData, loadDemoData, type FieldData, type LoadStep } from './lo
 export { ANALYSIS_START_YEAR, ANALYSIS_END_YEAR } from './weather'
 export { PRIORITY_KEYS, PRIORITY_LABELS } from './score'
 export { RULES, checkRotation, seasonOf, yearOf, SLOT_COUNT } from './rotation'
+export { lsFactor } from './simulate'
 export { slotLabel, rotationLabel } from './explain'
 export type { ClimateFeatures } from './features'
 

@@ -352,3 +352,111 @@
 .green-tag.g-green-crop { border-left-color: var(--cover); }
 .green-tag.g-some-vegetation { border-left-color: var(--forage); }
 .film-note { margin: 8px 0 0; }
+
+/* ═════════ Simple results: the land in 3D + a few plain choices ═════════ */
+.bar-change { margin-left: auto; }
+.tool-bar .home-btn { margin-left: 4px; }
+.simple-wait { padding: 60px 20px; text-align: center; color: var(--text-2); font-size: 18px; }
+.simple {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(340px, 1fr);
+  gap: 24px;
+  padding: 24px 20px 32px;
+  max-width: 1500px;
+  margin: 0 auto;
+  align-items: start;
+}
+.simple-land {
+  position: sticky;
+  top: 92px;
+  height: calc(100vh - 116px);
+  min-height: 420px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #cfdcd3;
+  box-shadow: var(--paper-shadow);
+}
+.terrain-wait { display: grid; place-items: center; height: 100%; padding: 24px; text-align: center; color: var(--text-2); font: 700 22px/1.2 var(--hand); }
+.layer-chips, .goal-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.layer-chips { position: absolute; z-index: 2; top: 12px; left: 12px; right: 12px; }
+.layer-chips button, .goal-chips button {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.94);
+  color: var(--text);
+  font: 700 17px/1.1 var(--hand);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+.layer-chips button.is-on, .goal-chips button.is-on { background: var(--accent); color: #fff; }
+.layer-chips button:focus-visible, .goal-chips button:focus-visible, .option-head:focus-visible { outline: 3px dashed var(--accent); outline-offset: 2px; }
+
+.terrain3d { position: absolute; inset: 0; }
+.terrain3d-canvas { position: absolute; inset: 0; }
+.terrain3d-canvas canvas { display: block; touch-action: none; }
+.terrain3d-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  max-width: min(340px, calc(100% - 24px));
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: rgba(255, 253, 248, 0.94);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+}
+.terrain3d-legend strong { display: block; font: 700 19px/1.1 var(--hand); }
+.terrain3d-legend ul { display: flex; flex-wrap: wrap; gap: 4px 10px; list-style: none; padding: 0; margin: 6px 0 0; }
+.terrain3d-legend li { display: flex; align-items: center; gap: 4px; margin: 0; }
+.terrain3d-legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+.terrain3d-legend i.none { border: 1px dashed var(--text-3); }
+.terrain3d-hint { position: absolute; right: 12px; bottom: 12px; padding: 3px 8px; border-radius: 4px; background: rgba(255, 253, 248, 0.8); color: var(--text-2); }
+.terrain3d-note { position: absolute; right: 12px; top: 56px; padding: 3px 8px; background: rgba(255, 253, 248, 0.9); border-radius: 4px; }
+
+.simple-choices { display: flex; flex-direction: column; gap: 14px; }
+.simple-choices h2 { font-size: 32px; }
+.goal-q { width: 100%; font-weight: 700; color: var(--text-2); }
+.options { display: flex; flex-direction: column; gap: 14px; transition: opacity 0.2s; }
+.options.is-stale { opacity: 0.6; }
+.option { background: var(--surface); border-radius: 4px; box-shadow: var(--paper-shadow); padding: 12px 14px 14px; }
+.option.is-selected { box-shadow: var(--paper-shadow), 0 0 0 3px var(--accent); }
+.option-current { background: var(--surface-2); }
+.option-head { display: flex; width: 100%; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0; margin: 0 0 8px; border: 0; background: none; color: inherit; cursor: pointer; text-align: left; }
+.option-title { font: 700 26px/1 var(--hand); }
+.option-show { font-size: 12.5px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.season-strip { list-style: none; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; padding: 0; margin: 0; }
+.ss { margin: 0; padding: 4px 6px; border-radius: 3px; background: var(--surface-2); border-top: 4px solid var(--bare); font-size: 12.5px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.ss-cash { border-top-color: var(--cash); }
+.ss-cover { border-top-color: var(--cover); }
+.ss-forage { border-top-color: var(--forage); }
+.ss-empty { color: var(--text-3); font-weight: 600; }
+.ss-when { display: block; font-size: 10px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.03em; }
+.option-stats { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 4px; font-size: 15px; font-weight: 700; }
+.option-stats li { display: flex; gap: 8px; align-items: baseline; margin: 0; }
+.stat-label { width: 52px; flex: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); }
+.stat-icon { width: 12px; flex: none; font-size: 11px; }
+.tone-good { color: var(--accent); }
+.tone-bad { color: #a8361b; }
+.tone-same { color: var(--text-2); }
+.option-more { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 14.5px; }
+.option-more p { margin: 0 0 6px; }
+.option-ext { padding: 8px 10px; border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 3px; }
+.details-btn { margin-top: 4px; }
+.simple-foot { margin: 0; }
+.details { border-top: 2px dashed rgba(36, 66, 90, 0.18); }
+.run-line { margin: 0; }
+@media (max-width: 980px) {
+  .simple { grid-template-columns: 1fr; padding: 16px 12px 28px; }
+  .simple-land { position: relative; top: 0; height: 58vh; min-height: 340px; }
+  .bar-change { padding: 5px 8px; font-size: 15px; }
+}
+@media (max-width: 520px) {
+  .tool-brand > div { display: none; }
+  .terrain3d-legend { padding: 6px 8px; }
+  .terrain3d-legend strong { font-size: 16px; }
+  .terrain3d-legend .small { display: none; }
+  .season-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .terrain3d-hint { display: none; }
+  .simple-choices h2 { font-size: 28px; }
+}

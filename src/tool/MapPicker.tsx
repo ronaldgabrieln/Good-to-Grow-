@@ -37,8 +37,10 @@ export function MapPicker(props: {
   initialZoom?: number
   picked: PickedPoint | null
   onPick: (p: PickedPoint) => void
-  onAnalyze: () => void
+  onSetLocation: () => void
   onHome?: () => void
+  /** True while the crop question sits on top of the map. */
+  dimmed?: boolean
 }) {
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<MlMap | null>(null)
@@ -109,7 +111,7 @@ export function MapPicker(props: {
   }
 
   return (
-    <div className="picker">
+    <div className={`picker ${props.dimmed ? 'is-dimmed' : ''}`}>
       <div ref={el} className="picker-map" />
       <div className="picker-top">
         <BrandLogo className="picker-logo" />
@@ -121,14 +123,14 @@ export function MapPicker(props: {
         {geoError && <p className="picker-error">{geoError}</p>}
       </div>
       <HomeButton onHome={props.onHome} className="picker-home" />
-      {props.picked && (
+      {props.picked && !props.dimmed && (
         <div className="picker-sheet" role="dialog" aria-label="Confirm field">
           <div>
             <strong>Is this your field?</strong>
             <span>We will read 30 years of NASA weather and satellite images for this spot.</span>
           </div>
-          <button className="picker-go" onClick={props.onAnalyze}>
-            Analyze this field
+          <button className="picker-go" onClick={props.onSetLocation}>
+            Set location
           </button>
         </div>
       )}

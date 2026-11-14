@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ANALYSIS_START_YEAR, DEFAULT_FIELD, loadFieldData, type FieldData, type FieldInput, type LoadStep } from '../engine'
+import { ANALYSIS_START_YEAR, DEFAULT_CURRENT, DEFAULT_FIELD, loadFieldData, type FieldData, type FieldInput, type LoadStep, type Slots } from '../engine'
+import { CropPicker } from './CropPicker'
 import DecisionTool from './DecisionTool'
 import { findFrames, type Frame } from './landsatFrames'
 import { LoadingScreen } from './LoadingScreen'
 import { MapPicker, type PickedPoint } from './MapPicker'
+import { loadTerrain, type Terrain } from './terrain/terrain'
 import './flow.css'
 
-type Stage = 'pick' | 'analyzing' | 'results'
+type Stage = 'pick' | 'crops' | 'analyzing' | 'results'
 
 const STEP_TEXT: Record<LoadStep | 'engine' | 'start', string> = {
   start: 'Getting ready…',
@@ -29,6 +31,11 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
   const [picked, setPicked] = useState<PickedPoint | null>(null)
   const [field, setField] = useState<FieldInput>(DEFAULT_FIELD)
   const [data, setData] = useState<FieldData | null>(null)
+  const [current, setCurrent] = useState<Slots>(DEFAULT_CURRENT)
+  /** The crop question starts empty until the farmer has answered it once. */
+  const [answered, setAnswered] = useState(false)
+  const [terrain, setTerrain] = useState<Terrain | null>(null)
+  const [terrainError, setTerrainError] = useState<string | null>(null)
   const [frames, setFrames] = useState<Frame[]>([])
   const [missingYears, setMissingYears] = useState<number[]>([])
   const [playFraction, setPlayFraction] = useState(0)
@@ -49,14 +56,18 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
   }
   useEffect(() => releaseFrames, [])
 
-  const analyze = useCallback(() => {
+  const analyze = useCallback((slots: Slots) => {
     if (!picked) return
+    setCurrent(slots)
+    setAnswered(true)
     releaseFrames()
     const ctrl = new AbortController()
     abortRef.current = ctrl
     const f = fieldFor(picked)
     setField(f)
     setData(null)
+    setTerrain(null)
+    setTerrainError(null)
     setFrames([])
     setMissingYears([])
     setPlayFraction(0)
@@ -77,6 +88,11 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
         setFrames((prev) => [...prev, fr])
       },
     }).catch(() => {})
+
+    // The 3D land view is fetched in the background; results never wait for it.
+    loadTerrain(f.lat, f.lon, ctrl.signal)
+      .then((t) => !ctrl.signal.aborted && setTerrain(t))
+      .catch((e: Error) => !ctrl.signal.aborted && setTerrainError(e.message))
 
     loadFieldData(f.lat, f.lon, { onStep: (s) => setStep(s) })
       .then((d) => {
@@ -120,21 +136,26 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
 
   return (
     <>
-      {stage === 'pick' && (
+      {(stage === 'pick' || stage === 'crops') && (
         <MapPicker
           initialCenter={picked ?? { lat: DEFAULT_FIELD.lat, lon: DEFAULT_FIELD.lon }}
           initialZoom={picked ? 15 : 13}
           picked={picked}
           onPick={setPicked}
-          onAnalyze={analyze}
+          onSetLocation={() => setStage('crops')}
           onHome={onHome}
+          dimmed={stage === 'crops'}
         />
       )}
-      {stage !== 'pick' && data && (
+      {stage === 'crops' && <CropPicker initial={answered ? current : []} onDone={analyze} onBack={() => setStage('pick')} />}
+      {(stage === 'analyzing' || stage === 'results') && data && (
         <DecisionTool
           key={`${field.lat},${field.lon}`}
           data={data}
           initialField={field}
+          initialCurrent={current}
+          terrain={terrain}
+          terrainError={terrainError}
           frames={frames}
           onChangeLocation={changeLocation}
           onFirstResult={onFirstResult}
