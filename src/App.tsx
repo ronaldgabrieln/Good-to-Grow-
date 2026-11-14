@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
+import Planner from './tool/Planner'
 
 // SVGs live in public/ (served as-is from the site root).
 const landingAsset = (name: string) =>
@@ -7,10 +8,15 @@ const landingAsset = (name: string) =>
 const storyAsset = (name: string) =>
   `/our story assets/${encodeURIComponent(name)}`
 
-type View = 'landing' | 'story'
+type View = 'landing' | 'story' | 'planner'
 
-const viewFromHash = (): View =>
-  window.location.hash === '#our-story' ? 'story' : 'landing'
+// '#3d-visual' (the landing's first button) opens the rotation planner.
+const viewFromHash = (): View => {
+  const h = window.location.hash
+  if (h === '#our-story') return 'story'
+  if (h === '#3d-visual' || h === '#planner') return 'planner'
+  return 'landing'
+}
 
 function App() {
   const [view, setView] = useState<View>(viewFromHash)
@@ -34,6 +40,8 @@ function App() {
   }, [])
 
   const isStory = view === 'story'
+
+  if (view === 'planner') return <Planner onHome={() => (window.location.hash = '')} />
 
   return (
     <main className={`scene${animating ? ' is-animating' : ''}`} data-view={view}>
