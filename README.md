@@ -11,7 +11,33 @@ npm install
 npm run dev          # tool at http://localhost:5173
 npm test             # engine tests (FAO-56 checks, rules, full replay on Maneadero data)
 npm run demo-data    # re-download the bundled Maneadero dataset (NASA POWER + SoilGrids)
+npm run serve        # production build + preview server (includes the agent endpoint)
 ```
+
+For the planning agent, copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`. The key is read only by the local server and never reaches the browser. Without it, the rest of the app works and the agent panel says it isn't set up.
+
+## Planning agent: "Ask about your plan"
+
+A chat drawer on the results screen where the farmer talks through their options in Spanish or English: "¿Por qué esta opción?", "What if I keep tomato every year?", "¿Qué hago este otoño?", "What could go wrong?".
+
+**How it's built**
+- `server/agentPlugin.ts` adds `POST /api/agent` to the Vite dev and preview servers. It holds the key and fixes the model (`claude-opus-5-5`, effort `medium`), the system prompt, the tools and size limits. The browser can only send conversation turns (user/assistant), and responses stream back as Server-Sent Events. Refusals fall back to another model server-side (`fallbacks: "default"`), and the fixed prompt and tools are prompt-cached.
+- The loop runs in the browser ([useAgent.ts](src/agent/useAgent.ts)) because the tools need the engine state there. Each tool call runs against the engine in a separate worker ([toolHandlers.ts](src/agent/toolHandlers.ts)). There are at most 8 tool rounds per question, and history is rolled back if a question fails half-way.
+- 9 tools ([toolDefs.ts](src/agent/toolDefs.ts)): `get_field_overview`, `get_options`, `evaluate_rotation` (what-if), `compare_rotations`, `test_climate`, `crop_info`, `season_plan`, `show_on_land` (drives the 3D view) and `propose_change`.
+
+**Changing a plan together**
+- The farmer picks any plan on the card (or the helper is asked to "Review this plan"). Every question carries an app note saying which plan is open, the drawer shows "Talking about: …" and each question is tagged with the plan it was about.
+- The helper can only change a plan through `propose_change`. The app replays the changed rotation and shows a card in the chat with the seasons that change, water / money / soil versus the plan before, and any rule problems, plus **Allow** and **Deny**. The loop waits for the farmer; Stop counts as Deny.
+- An allowed change becomes **Your plan**, a fifth tile on the card ("Edited from …", with an "Undo my changes" link). It is replayed again when the field, climate or priorities change, and the helper can keep editing it.
+
+**How it stays grounded**
+1. Data only comes from tools. The system prompt ([systemPrompt.ts](src/agent/systemPrompt.ts)) forbids figures that aren't in a tool result and sends pesticides, diagnosis, prices, credit and legal questions to the agronomist.
+2. Code does the math: tools return rounded figures and precomputed % changes and differences, so the model only quotes them.
+3. Inputs are constrained: strict schemas with crop-id enums, re-validated in the browser. Bad input comes back as an error result instead of running.
+4. Every answer gets a unit-aware number check ([grounding.ts](src/agent/grounding.ts)): numbers not found in this conversation's tool results (with the same unit) are underlined and counted under the answer.
+5. Transparency: each answer has a "What I checked" step list and its data sources.
+
+**Limits:** it needs internet and a key, and costs per question (2–5 API calls; the server logs token use per call). It only knows what the engine knows (coarse NASA grid, modeled soil, placeholder income index, no sensors yet). The conversation is lost on refresh and there's a single user. The number check verifies figures, not every sentence. The server has no auth, so run it locally only.
 
 ## The farmer's flow
 
@@ -19,7 +45,7 @@ npm run demo-data    # re-download the bundled Maneadero dataset (NASA POWER + S
 2. **Pick the field on a map** and press **Set location**.
 3. **"What are you planting now?"** The farmer types crop names (English or Spanish); matches appear after a 1-second pause. They only say *which* crops they grow; the tool works out the seasons ([CropPicker.tsx](src/tool/CropPicker.tsx)).
 4. **"Analyzing your farm…"**: a Landsat timelapse of the spot from 1995 to today plays once, in order, while the engine runs.
-5. **Results, kept simple**: a **3D model of 6 × 6 km of land around the field** (NASA SRTM elevation with a satellite photo on top) with three layers: *soil washing away* (the selected option's modeled soil loss spread over the land by slope), *where water runs* (D8 flow paths) and *just the photo*. Next to it are a few plain cards (*What you do now*, *A small change*, *Best for you*, *Another way*), each with a season strip and "uses X% less water / earns Y% less / protects the soil better". **See all the details** opens the full report (climate, Landsat filmstrip, calendar, trade-off table, evidence cards, method).
+5. **Results, kept simple**: a **3D model of 6 × 6 km of land around the field** (NASA SRTM elevation with a satellite photo on top) with three layers: *soil washing away* (the selected option's modeled soil loss spread over the land by slope), *where water runs* (D8 flow paths) and *just the photo*. Next to it is one card: "What matters most to you?" tiles along its top (they re-rank the options) and the plans down its right side (*What you do now*, *A small change*, *Best for you*, *Another way*, and *Your plan* once the farmer allows a change), with a 3-year ring and "uses X% less water / earns Y% less / protects the soil better". **See all the details** opens the full report (climate, Landsat filmstrip, calendar, trade-off table, evidence cards, method).
 
 Frames come from the NASA/USGS Landsat Collection 2 archive on Microsoft Planetary Computer, which is keyless and works from the browser ([landsatFrames.ts](src/tool/landsatFrames.ts)). For each year a STAC search finds scenes over the field (autumn first, then any month). The app keeps a scene whose footprint covers the whole frame with the fewest clouds, and the tiler crops every frame to the same bounding box. Landsat 7 scenes after its 2003 scan-line failure are skipped (black stripes), so **2012 has no image**; the timeline marks it as missing. Google Earth Engine could make the same timelapse, but it needs a Google Cloud project, OAuth or a service account, and a server.
 

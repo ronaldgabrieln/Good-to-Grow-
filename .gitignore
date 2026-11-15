@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local secrets (Anthropic API key for the planning agent)
+.env
+.env.*
+!.env.example

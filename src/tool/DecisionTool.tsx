@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CROP_BY_ID,
   DEFAULT_PRIORITIES,
@@ -12,10 +12,12 @@ import {
   type PriorityKey,
   type RotationMetrics,
   type Scenario,
+  type SlotEvaluation,
   type Slots,
-  type Strategy,
-  type StrategyType,
 } from '../engine'
+import type { PlanKey } from '../agent/toolDefs'
+import type { AgentContext, YourPlan } from '../agent/toolHandlers'
+import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { BrandLogo, HomeButton } from './Brand'
 import { ClimatePanel } from './ClimatePanel'
 import { ComparisonTable } from './ComparisonTable'
@@ -24,104 +26,111 @@ import { FieldFromSpace } from './FieldFromSpace'
 import { GroundPanel } from './GroundPanel'
 import { fmt } from './format'
 import type { Frame } from './landsatFrames'
+import { PLAIN_TITLE, plainStats } from './plans'
 import { RotationCalendar } from './RotationCalendar'
+import { RotationRing } from './RotationRing'
 import { StrategyCardView } from './StrategyCardView'
 import { Terrain3D, type TerrainLayer } from './terrain/Terrain3D'
 import type { Terrain } from './terrain/terrain'
 import { useEngine } from './useEngine'
+import { useEvaluator } from './useEvaluator'
 import './tool.css'
+import changeFieldImg from '../assets/Hello (9).svg'
 
-/** Plain names a farmer understands. */
-const PLAIN_TITLE: Record<StrategyType, string> = {
-  current: 'What you do now',
-  'small-change': 'A small change',
-  best: 'Best for you',
-  different: 'Another way',
-}
-
-const GOALS: { key: string; label: string; priorities: Priorities }[] = [
+type GoalKey = 'balanced' | 'water' | 'income' | 'soil'
+const GOALS: { key: GoalKey; label: string; priorities: Priorities }[] = [
   { key: 'balanced', label: 'A bit of everything', priorities: DEFAULT_PRIORITIES },
   { key: 'water', label: 'Save water', priorities: { water: 5, income: 3, soil: 2, nitrogen: 2, erosion: 2, pest: 2, risk: 2 } },
   { key: 'income', label: 'Earn more', priorities: { water: 2, income: 5, soil: 1, nitrogen: 2, erosion: 1, pest: 3, risk: 4 } },
   { key: 'soil', label: 'Healthier soil', priorities: { water: 2, income: 3, soil: 5, nitrogen: 3, erosion: 5, pest: 3, risk: 2 } },
 ]
 
-const pct = (a: number, b: number) => (b === 0 ? 0 : ((a - b) / Math.abs(b)) * 100)
-const short = (id: string) => CROP_BY_ID[id].name.replace(/ \(.*\)$/, '')
+const SEASON_NAMES = ['Year 1 spring', 'Year 1 fall', 'Year 2 spring', 'Year 2 fall', 'Year 3 spring', 'Year 3 fall']
 
-interface Stat {
-  label: string
-  text: string
-  tone: 'good' | 'bad' | 'same'
+/** Everything the card needs about one plan, whether it came from the engine or from the farmer's edits. */
+interface PlanView {
+  key: PlanKey
+  slots: Slots
+  metrics: RotationMetrics | null
+  reason: string | null
+  problems: string[]
+  /** "yours" only: the option it was edited from, and which seasons changed. */
+  fromTitle?: string
+  edits?: string[]
 }
 
-function plainStats(m: RotationMetrics, base: RotationMetrics | null): Stat[] {
-  if (!base) {
-    return [
-      { label: 'Water', text: `${fmt(m.waterMm * 10)} m³ per hectare a year`, tone: 'same' },
-      { label: 'Money', text: `Income score ${fmt(m.income, 1)}`, tone: 'same' },
-      { label: 'Soil', text: `${fmt(m.erosionT, 1)} t/ha of soil lost a year`, tone: 'same' },
-    ]
-  }
-  const w = pct(m.waterMm, base.waterMm)
-  const inc = pct(m.income, base.income)
-  const ero = pct(m.erosionT, base.erosionT)
-  const carb = pct(m.soilCarbon, base.soilCarbon)
-  const soilGood = (ero <= -5 ? 1 : ero >= 5 ? -1 : 0) + (carb >= 5 ? 1 : carb <= -5 ? -1 : 0)
-  return [
-    {
-      label: 'Water',
-      text: Math.abs(w) < 3 ? 'About the same water' : `Uses ${fmt(Math.abs(w))}% ${w < 0 ? 'less' : 'more'} water`,
-      tone: Math.abs(w) < 3 ? 'same' : w < 0 ? 'good' : 'bad',
-    },
-    {
-      label: 'Money',
-      text: Math.abs(inc) < 3 ? 'About the same income' : `Earns about ${fmt(Math.abs(inc))}% ${inc > 0 ? 'more' : 'less'}`,
-      tone: Math.abs(inc) < 3 ? 'same' : inc > 0 ? 'good' : 'bad',
-    },
-    {
-      label: 'Soil',
-      text: soilGood > 0 ? 'Protects the soil better' : soilGood < 0 ? 'Harder on the soil' : 'About the same for the soil',
-      tone: soilGood > 0 ? 'good' : soilGood < 0 ? 'bad' : 'same',
-    },
-  ]
-}
-
-function SeasonStrip({ slots }: { slots: Slots }) {
+/** Hand-drawn little glyphs for the tiles (stroke only, drawn in white on the tile). */
+function TileIcon({ type }: { type: PlanKey | GoalKey }) {
+  const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 3.2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
   return (
-    <ol className="season-strip" aria-label="Three years, spring and fall">
-      {slots.map((id, i) => {
-        const kind = id ? CROP_BY_ID[id].kind : 'empty'
-        return (
-          <li key={i} className={`ss ss-${kind}`}>
-            <span className="ss-when">
-              Y{Math.floor(i / 2) + 1} {i % 2 === 0 ? 'spring' : 'fall'}
-            </span>
-            {id ? short(id) : 'bare'}
-          </li>
-        )
-      })}
-    </ol>
+    <svg viewBox="0 0 48 48" aria-hidden width="100%" height="100%">
+      {type === 'current' && (
+        <g {...common}>
+          <path d="M6 34c10-6 26-6 36 0" />
+          <path d="M6 25c10-6 26-6 36 0" />
+          <path d="M6 16c10-6 26-6 36 0" />
+        </g>
+      )}
+      {type === 'small-change' && (
+        <g {...common}>
+          <path d="M24 40V22" />
+          <path d="M24 26c-8 0-12-5-12-11 8 0 12 4 12 11z" />
+          <path d="M24 22c0-6 4-10 12-10 0 6-4 10-12 10z" />
+          <path d="M10 41h28" />
+        </g>
+      )}
+      {type === 'best' && <path {...common} d="M24 6l5.4 11.2 12.2 1.6-8.9 8.5 2.2 12.1L24 33.5l-10.9 5.9 2.2-12.1-8.9-8.5 12.2-1.6z" />}
+      {type === 'different' && (
+        <g {...common}>
+          <path d="M9 18h20l-5-6M9 18l5 6" />
+          <path d="M39 30H19l5 6M39 30l-5-6" />
+        </g>
+      )}
+      {type === 'yours' && (
+        <g {...common}>
+          <path d="M31 9l8 8-20 20-10 2 2-10z" />
+          <path d="M27 13l8 8" />
+        </g>
+      )}
+      {type === 'balanced' && (
+        <g {...common}>
+          <path d="M24 8v32M14 40h20M10 14h28" />
+          <path d="M10 14l-5 12h10zM38 14l-5 12h10z" />
+        </g>
+      )}
+      {type === 'water' && <path {...common} d="M24 6c8 11 13 18 13 24a13 13 0 0 1-26 0c0-6 5-13 13-24z" />}
+      {type === 'income' && (
+        <g {...common}>
+          <ellipse cx="24" cy="14" rx="13" ry="5" />
+          <path d="M11 14v8c0 2.8 5.8 5 13 5s13-2.2 13-5v-8" />
+          <path d="M11 22v8c0 2.8 5.8 5 13 5s13-2.2 13-5v-8" />
+        </g>
+      )}
+      {type === 'soil' && (
+        <g {...common}>
+          <path d="M6 40h36M10 33h28" />
+          <path d="M24 33V20" />
+          <path d="M24 23c-7 0-10-4-10-10 7 0 10 4 10 10zM24 20c0-5 3-9 10-9 0 5-3 9-10 9z" />
+        </g>
+      )}
+    </svg>
   )
 }
 
-function OptionCard(props: { s: Strategy; base: RotationMetrics | null; selected: boolean; onSelect: () => void }) {
-  const { s } = props
-  const isCurrent = s.type === 'current'
-  const stats = isCurrent ? [] : plainStats(s.metrics, props.base)
-  // One plain reason: the mechanism sentence (cover crops / legumes) if there is one.
-  const reason =
-    s.card.why.find((w) => /protect|fixes|fix nitrogen/.test(w)) ??
-    (isCurrent ? 'This is what you told us you plant now.' : s.card.why.find((w) => /Smallest step|different approach/.test(w)))
+/** The big middle of the card: what the picked plan is, and why. */
+function OptionHero(props: { plan: PlanView; base: RotationMetrics | null; current?: Slots; onReview: () => void; onUndo?: () => void }) {
+  const { plan } = props
+  const isCurrent = plan.key === 'current'
+  const stats = isCurrent || !plan.metrics ? [] : plainStats(plan.metrics, props.base)
   return (
-    <article className={`option ${props.selected ? 'is-selected' : ''} option-${s.type}`}>
-      <button type="button" className="option-head" onClick={props.onSelect} aria-pressed={props.selected}>
-        <span className="option-title">{PLAIN_TITLE[s.type]}</span>
-        <span className="option-show">{props.selected ? 'Shown on the land' : 'Show on the land'}</span>
-      </button>
-      <SeasonStrip slots={s.rotation.slots} />
+    <div className={`choice-hero hero-${plan.key}`} key={plan.key} aria-live="polite">
+      <div className="hero-top">
+        <span className="hero-pill hero-pill--title">{PLAIN_TITLE[plan.key]}</span>
+        <span className="hero-pill">{plan.fromTitle ? `Edited from ${plan.fromTitle}` : 'Shown on the land'}</span>
+      </div>
+      <RotationRing slots={plan.slots} current={isCurrent ? undefined : props.current} />
       {stats.length > 0 && (
-        <ul className="option-stats">
+        <ul className="hero-stats">
           {stats.map((st) => (
             <li key={st.label} className={`tone-${st.tone}`}>
               <span className="stat-icon" aria-hidden>
@@ -133,13 +142,38 @@ function OptionCard(props: { s: Strategy; base: RotationMetrics | null; selected
           ))}
         </ul>
       )}
-      {props.selected && (
-        <div className="option-more">
-          {reason && <p>{reason}</p>}
-          {!isCurrent && <p className="option-ext">{s.card.extension}</p>}
-        </div>
-      )}
-    </article>
+      {plan.edits && plan.edits.length > 0 && <p className="hero-reason">You changed: {plan.edits.join('; ')}.</p>}
+      {plan.reason && <p className="hero-reason">{plan.reason}</p>}
+      {plan.problems.length > 0 && <p className="hero-warn">⚠ {plan.problems.join(' ')}</p>}
+      <div className="hero-actions">
+        <button type="button" className="btn hero-review" onClick={props.onReview}>
+          Review this plan with the helper
+        </button>
+        {props.onUndo && (
+          <button type="button" className="agent-link" onClick={props.onUndo}>
+            Undo my changes
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Tile(props: { kind: PlanKey | GoalKey; label: string; selected: boolean; onSelect: () => void; radio?: boolean }) {
+  return (
+    <button
+      type="button"
+      className={`choice-tile choice-tile-${props.kind} ${props.selected ? 'is-on' : ''}`}
+      role={props.radio ? 'radio' : undefined}
+      aria-pressed={props.radio ? undefined : props.selected}
+      aria-checked={props.radio ? props.selected : undefined}
+      onClick={props.onSelect}
+    >
+      <span className="choice-tile-icon">
+        <TileIcon type={props.kind} />
+      </span>
+      <span className="choice-tile-label">{props.label}</span>
+    </button>
   )
 }
 
@@ -147,6 +181,7 @@ export default function DecisionTool(props: {
   data: FieldData
   initialField: FieldInput
   initialCurrent: Slots
+  initialPriorities?: Priorities
   terrain: Terrain | null
   terrainError: string | null
   frames: Frame[]
@@ -158,9 +193,14 @@ export default function DecisionTool(props: {
   const { data, frames, onChangeLocation, onFirstResult, terrain } = props
   const [field, setField] = useState<FieldInput>(props.initialField)
   const [current, setCurrent] = useState<Slots>(props.initialCurrent)
-  const [priorities, setPriorities] = useState<Priorities>(DEFAULT_PRIORITIES)
+  const [priorities, setPriorities] = useState<Priorities>(props.initialPriorities ?? DEFAULT_PRIORITIES)
   const [scenario, setScenario] = useState<Scenario>(DEFAULT_SCENARIO)
-  const [selectedType, setSelectedType] = useState<StrategyType>('best')
+  const [selectedKey, setSelectedKey] = useState<PlanKey>('best')
+  /** The farmer's own plan, made by allowing a change the helper proposed. */
+  const [yours, setYours] = useState<YourPlan | null>(null)
+  const [yoursEval, setYoursEval] = useState<{ plan: YourPlan; input: EngineInput; ev: SlotEvaluation } | null>(null)
+  const [agentOpen, setAgentOpen] = useState(false)
+  const [agentRequest, setAgentRequest] = useState<AgentRequest | null>(null)
   const [layer, setLayer] = useState<TerrainLayer>('erosion')
   const [showDetails, setShowDetails] = useState(false)
   const detailsRef = useRef<HTMLDivElement>(null)
@@ -193,7 +233,82 @@ export default function DecisionTool(props: {
 
   const strategies = result?.strategies ?? []
   const base = strategies.find((s) => s.type === 'current')?.metrics ?? null
-  const selected = strategies.find((s) => s.type === selectedType) ?? strategies.find((s) => s.type !== 'current') ?? strategies[0]
+  const evaluate = useEvaluator()
+
+  // "Your plan" is replayed again whenever the field, weather scenario or priorities change.
+  useEffect(() => {
+    if (!yours) return
+    let live = true
+    evaluate(input, [{ slots: yours.slots }])
+      .then(([ev]) => {
+        if (live) setYoursEval({ plan: yours, input, ev })
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [yours, input, evaluate])
+  const mine = yours && yoursEval?.plan === yours ? yoursEval : null
+
+  const plans: PlanView[] = strategies.map((s) => ({
+    key: s.type,
+    slots: s.rotation.slots,
+    metrics: s.metrics,
+    problems: [],
+    // One plain reason: the mechanism sentence (cover crops / legumes) if there is one.
+    reason:
+      s.card.why.find((w) => /protect|fixes|fix nitrogen/.test(w)) ??
+      (s.type === 'current' ? 'This is what you told us you plant now.' : (s.card.why.find((w) => /Smallest step|different approach/.test(w)) ?? null)),
+  }))
+  if (yours) {
+    const from = strategies.find((s) => s.type === yours.from)
+    plans.push({
+      key: 'yours',
+      slots: yours.slots,
+      metrics: mine?.ev.metrics ?? null,
+      problems: mine?.ev.validity.reasons ?? [],
+      reason: null,
+      fromTitle: PLAIN_TITLE[yours.from],
+      edits: from
+        ? yours.slots.flatMap((id, i) => (id === from.rotation.slots[i] ? [] : [`${SEASON_NAMES[i]} to ${id ? CROP_BY_ID[id].name.replace(/ \(.*\)$/, '') : 'nothing'}`]))
+        : [],
+    })
+  }
+  const selected = plans.find((p) => p.key === selectedKey) ?? plans.find((p) => p.key === 'best') ?? plans[0]
+  const yoursStale = selected?.key === 'yours' && (!mine || mine.input !== input)
+
+  // The planning agent reads the latest results through this ref (tools run against the engine).
+  const agentContext = useRef<AgentContext | null>(null)
+  useEffect(() => {
+    agentContext.current = result
+      ? {
+          result,
+          input,
+          evaluate,
+          viewing: selected?.key ?? 'best',
+          yours,
+          applyPlan: (plan) => {
+            setYours(plan)
+            setSelectedKey('yours')
+          },
+          showOnLand: (option, layerKey) => {
+            if (option === 'yours' ? !yours : !result.strategies.some((s) => s.type === option)) return `The plan "${option}" is not on screen right now.`
+            setSelectedKey(option)
+            setLayer(layerKey)
+            return terrain ? null : 'The 3D view is still loading; the plan is selected and will show when it is ready.'
+          },
+        }
+      : null
+  }, [result, input, evaluate, terrain, selected?.key, yours])
+  const getAgentContext = useCallback(() => agentContext.current, [])
+
+  const reviewPlan = (key: PlanKey) => {
+    setAgentOpen(true)
+    setAgentRequest((r) => ({
+      id: (r?.id ?? 0) + 1,
+      text: `Review "${PLAIN_TITLE[key]}" with me: what is good, what is risky, and which season would you change?`,
+    }))
+  }
 
   const openDetails = () => {
     setShowDetails(true)
@@ -210,8 +325,9 @@ export default function DecisionTool(props: {
             <span className="muted small">{field.name}</span>
           </div>
         </div>
-        <button className="btn btn-quiet btn-inline bar-change" onClick={onChangeLocation}>
-          Change field
+        {/* paper button, styled like the "back" one next to it (.home-btn) */}
+        <button type="button" className="home-btn bar-change" onClick={onChangeLocation}>
+          <img src={changeFieldImg} alt="Change field" />
         </button>
         <HomeButton onHome={props.onHome} />
       </header>
@@ -238,8 +354,8 @@ export default function DecisionTool(props: {
               <Terrain3D
                 terrain={terrain}
                 layer={layer}
-                erosionAtField={selected.metrics.erosionT}
-                rotationLabel={PLAIN_TITLE[selected.type].toLowerCase()}
+                erosionAtField={(selected.metrics ?? base)?.erosionT ?? 0}
+                rotationLabel={PLAIN_TITLE[selected.key].toLowerCase()}
               />
             ) : (
               <div className="terrain-wait">
@@ -250,19 +366,39 @@ export default function DecisionTool(props: {
 
           <section className="simple-choices" aria-label="What to plant next">
             <h2>What should you plant next?</h2>
-            <div className="goal-chips" role="radiogroup" aria-label="What matters most to you">
-              <span className="goal-q">What matters most to you?</span>
-              {GOALS.map((g) => (
-                <button key={g.key} type="button" role="radio" aria-checked={goal === g.key} className={goal === g.key ? 'is-on' : ''} onClick={() => setPriorities(g.priorities)}>
-                  {g.label}
-                </button>
-              ))}
-            </div>
-            <div className={`options ${running ? 'is-stale' : ''}`}>
-              {strategies.map((s) => (
-                <OptionCard key={s.type} s={s} base={base} selected={selected === s} onSelect={() => setSelectedType(s.type)} />
-              ))}
-            </div>
+            {selected && (
+              <div className={`choice-card ${running || yoursStale ? 'is-stale' : ''}`}>
+                <div className="choice-goals">
+                  <span className="choice-goals-q" id="goal-q">
+                    What matters most to you?
+                  </span>
+                  <div className="choice-tiles choice-tiles--top" role="radiogroup" aria-labelledby="goal-q">
+                    {GOALS.map((g) => (
+                      <Tile key={g.key} kind={g.key} label={g.label} radio selected={goal === g.key} onSelect={() => setPriorities(g.priorities)} />
+                    ))}
+                  </div>
+                </div>
+                <OptionHero
+                  plan={selected}
+                  base={base}
+                  current={current}
+                  onReview={() => reviewPlan(selected.key)}
+                  onUndo={
+                    selected.key === 'yours' && yours
+                      ? () => {
+                          setSelectedKey(yours.from)
+                          setYours(null)
+                        }
+                      : undefined
+                  }
+                />
+                <div className="choice-tiles choice-tiles--side" role="group" aria-label="Pick a way to plant">
+                  {plans.map((p) => (
+                    <Tile key={p.key} kind={p.key} label={PLAIN_TITLE[p.key]} selected={selected.key === p.key} onSelect={() => setSelectedKey(p.key)} />
+                  ))}
+                </div>
+              </div>
+            )}
             <button type="button" className="btn details-btn" onClick={() => (showDetails ? setShowDetails(false) : openDetails())} aria-expanded={showDetails}>
               {showDetails ? 'Hide the details' : 'See all the details'}
             </button>
@@ -271,6 +407,10 @@ export default function DecisionTool(props: {
             </p>
           </section>
         </div>
+      )}
+
+      {result && selected && (
+        <AgentPanel getContext={getAgentContext} open={agentOpen} onOpenChange={setAgentOpen} viewingTitle={PLAIN_TITLE[selected.key]} request={agentRequest} />
       )}
 
       {result && showDetails && (

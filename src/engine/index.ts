@@ -14,14 +14,14 @@ import { generateCandidates, hamming, neighborhood, PRIORITY_KEYS, rotationDista
 import { createContext } from './simulate'
 import type { FieldData } from './load'
 import { prepareWeather } from './weather'
-import type { FieldInput, Priorities, PriorityKey, Scenario, Slots, Soil, Strategy, StrategyType, WeatherSeries } from './types'
+import type { FieldInput, Priorities, PriorityKey, RotationMetrics, Scenario, Slots, Soil, Strategy, StrategyType, WeatherSeries } from './types'
 
 export * from './types'
 export { CROPS, CROP_BY_ID, DEFAULT_CURRENT, SOURCES, cropDuration } from './crops'
 export { loadFieldData, loadDemoData, type FieldData, type LoadStep } from './load'
 export { ANALYSIS_START_YEAR, ANALYSIS_END_YEAR } from './weather'
 export { PRIORITY_KEYS, PRIORITY_LABELS } from './score'
-export { RULES, checkRotation, seasonOf, yearOf, SLOT_COUNT } from './rotation'
+export { RULES, checkRotation, seasonOf, yearOf, SLOT_COUNT, windowsOf } from './rotation'
 export { lsFactor } from './simulate'
 export { slotLabel, rotationLabel } from './explain'
 export type { ClimateFeatures } from './features'
@@ -187,6 +187,75 @@ export function runEngine(input: EngineInput): EngineResult {
     rules: RULES,
     elapsedMs: performance.now() - t0,
   }
+}
+
+export interface SlotEvaluation {
+  slots: Slots
+  label: string
+  validity: { ok: boolean; reasons: string[] }
+  /** null when nothing in the rotation can be simulated (e.g. all slots empty). */
+  metrics: RotationMetrics | null
+  events: Strategy['events']
+  windows: Strategy['windows']
+  card: Strategy['card'] | null
+  /** Metrics of the farmer's current rotation under the same scenario (the comparison baseline). */
+  currentMetrics: RotationMetrics | null
+}
+
+/**
+ * Replay specific rotations (no candidate search), each compared with the farmer's current
+ * rotation under the same weather scenario. Used by the planning agent's "what if" tools.
+ */
+export function evaluateSlots(input: EngineInput, items: { slots: Slots; scenario?: Scenario }[]): SlotEvaluation[] {
+  const { data, field, priorities, current } = input
+  const contexts = new Map<string, { ctx: ReturnType<typeof createContext>; weather: WeatherSeries; features: ClimateFeatures }>()
+  const contextFor = (scenario: Scenario) => {
+    const key = `${scenario.deltaTempC}|${scenario.rainChange}`
+    let c = contexts.get(key)
+    if (!c) {
+      const weather = prepareWeather(data.power, data.source, field.elevationM, scenario)
+      c = { ctx: createContext(weather, data.soil, field), weather, features: computeFeatures(weather) }
+      contexts.set(key, c)
+    }
+    return c
+  }
+  return items.map(({ slots, scenario }) => {
+    const { ctx, weather, features } = contextFor(scenario ?? input.scenario)
+    const ev = evaluateRotation(ctx, slots, true)
+    const currentEv = evaluateRotation(ctx, current, true)
+    const baseline = currentEv?.metrics ?? ev?.metrics ?? null
+    const isCurrent = canonicalKey(slots) === canonicalKey(current)
+    const card =
+      ev && baseline
+        ? buildCard({
+            slots,
+            type: isCurrent ? 'current' : 'different',
+            metrics: ev.metrics,
+            scores: Object.fromEntries(PRIORITY_KEYS.map((k) => [k, 0])) as Strategy['scores'],
+            events: ev.events,
+            rank: 0,
+            poolSize: 0,
+            isCurrent,
+            current: { slots: current, metrics: baseline },
+            priorities,
+            features,
+            weather,
+            soil: data.soil,
+            field,
+            bestAt: [],
+          })
+        : null
+    return {
+      slots,
+      label: rotationLabel(slots),
+      validity: checkRotation(slots, true),
+      metrics: ev?.metrics ?? null,
+      events: ev?.events ?? [],
+      windows: ev?.windows ?? [],
+      card,
+      currentMetrics: currentEv?.metrics ?? null,
+    }
+  })
 }
 
 /** Crop names for a slot array, for logging / debugging. */

@@ -1,8 +1,8 @@
 // Brand pieces shared with the landing page (same SVG assets, so they are already cached).
 const asset = (folder: string, name: string) => `${import.meta.env.BASE_URL}${folder}/${encodeURIComponent(name)}`
 
-const LOGO_SRC = asset('landing assets', 'Hello.svg')
-const BACK_SRC = asset('our story assets', 'back.svg')
+const LOGO_SRC = asset('landing_assets', 'Hello.svg')
+const BACK_SRC = asset('our_story_assets', 'back.svg')
 
 export function BrandLogo({ className = '' }: { className?: string }) {
   return <img className={`brand-logo ${className}`} src={LOGO_SRC} alt="GoodToGrow — Smart farming" />

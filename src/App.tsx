@@ -4,9 +4,9 @@ import Planner from './tool/Planner'
 
 // SVGs live in public/ (served as-is from the site root).
 const landingAsset = (name: string) =>
-  `/landing assets/${encodeURIComponent(name)}`
+  `/landing_assets/${encodeURIComponent(name)}`
 const storyAsset = (name: string) =>
-  `/our story assets/${encodeURIComponent(name)}`
+  `/our_story_assets/${encodeURIComponent(name)}`
 
 type View = 'landing' | 'story' | 'planner'
 
@@ -61,7 +61,7 @@ function App() {
 
         <nav className="menu" aria-label="Main">
           <a className="paper-btn paper-btn--visual" href="#3d-visual">
-            <img src={landingAsset('boton 1.svg')} alt="3d visual" />
+            <img src={landingAsset('Hello (7).svg')} alt="start growing" />
           </a>
           <a className="paper-btn paper-btn--story" href="#our-story">
             <img src={landingAsset('boton 2.svg')} alt="our story" />
@@ -71,7 +71,7 @@ function App() {
 
       <footer className="footer" inert={isStory}>
         <img
-          src={landingAsset('pie.svg')}
+          src={landingAsset('Hello (8).svg')}
           alt="Made with love by los carbones remix"
         />
       </footer>
@@ -85,8 +85,8 @@ function App() {
       >
         <img
           className="story-text"
-          src={storyAsset('text.svg')}
-          alt="We are a mexican team that cares about the workers that farm in our community. We want this site to be understandable for farmers, because farming is difficult and they support the economy of our city."
+          src={storyAsset('text (2).svg')}
+          alt="We are a team of five students from Mexico united by passion for science, technology and innovation. For the 2026 NASA Space Apps Challenge, we chose to tackle the Field Shift challenge because we believe that farmers are the backbone of our communities. Our mission is to put NASA's open data directly into the hands of farmers, helping them adapt to shifting climate patterns simply and effectively."
         />
         <img className="story-heart" src={storyAsset('heart.svg')} alt="" />
         <img className="story-doodle" src={storyAsset('doodle.svg')} alt="" />

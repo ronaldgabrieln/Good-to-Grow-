@@ -76,7 +76,7 @@ export function StrategyCardView({ s }: { s: Strategy }) {
         <List items={c.gaps} />
       </details>
 
-      <p className="extension">{c.extension}</p>
+      {/* "Talk to your extension agent" note hidden for now; the text is still in c.extension */}
     </article>
   )
 }

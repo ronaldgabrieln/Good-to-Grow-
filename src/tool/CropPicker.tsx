@@ -127,7 +127,7 @@ export function CropPicker(props: { initial: Slots; onDone: (slots: Slots) => vo
           </button>
           {crops.length > 0 && (
             <button type="button" className="crops-go" onClick={() => props.onDone(slotsFromCrops(crops))}>
-              Analyze my farm
+              Next
             </button>
           )}
         </div>
