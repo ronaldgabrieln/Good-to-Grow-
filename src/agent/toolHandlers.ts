@@ -17,14 +17,42 @@ import {
   type Strategy,
 } from '../engine'
 import { doyToLabel } from '../engine/features'
-import { CROP_IDS, LAYERS, OPTION_KEYS, SLOT_VALUES, type OptionKey } from './toolDefs'
+import { CROP_IDS, LAYERS, PLAN_KEYS, SLOT_VALUES, type OptionKey, type PlanKey } from './toolDefs'
+
+/** The farmer's own plan, made by allowing a change the helper proposed. */
+export interface YourPlan {
+  /** The engine option it started from. */
+  from: OptionKey
+  slots: Slots
+}
+
+/** A change the helper wants to make; the farmer allows or denies it in the chat. */
+export interface Proposal {
+  id: string
+  base: PlanKey
+  baseTitle: string
+  before: Slots
+  after: Slots
+  changes: { season: string; from: string; to: string }[]
+  reason: string
+  problems: string[]
+  metrics: RotationMetrics | null
+  baseMetrics: RotationMetrics | null
+}
 
 export interface AgentContext {
   result: EngineResult
   input: EngineInput
   evaluate: (input: EngineInput, items: { slots: Slots; scenario?: Scenario }[]) => Promise<SlotEvaluation[]>
-  /** Select an option and layer on the 3D view; returns an error message or null. */
-  showOnLand: (option: OptionKey, layer: (typeof LAYERS)[number]) => string | null
+  /** Select a plan and layer on the 3D view; returns an error message or null. */
+  showOnLand: (option: PlanKey, layer: (typeof LAYERS)[number]) => string | null
+  /** The plan the farmer has open on screen. */
+  viewing: PlanKey
+  yours: YourPlan | null
+  /** Make the rotation the farmer's plan ("yours") and show it. Only called after the farmer allows it. */
+  applyPlan: (plan: YourPlan) => void
+  /** Shows a proposal in the chat and resolves with the farmer's decision (set by the agent loop). */
+  requestApproval?: (p: Proposal) => Promise<boolean>
 }
 
 export interface ToolOutput {
@@ -40,7 +68,7 @@ export interface ToolOutput {
 // ───────── input validation (the API enforces the same schemas with strict: true; this is defense in depth)
 
 const Slot = z.enum(SLOT_VALUES as [string, ...string[]])
-const Option = z.enum([...OPTION_KEYS, 'custom'])
+const Option = z.enum([...PLAN_KEYS, 'custom'])
 const Target = z.object({ option: Option, slots: z.array(Slot) }).strict()
 const SCHEMAS = {
   get_field_overview: z.object({}).strict(),
@@ -50,7 +78,8 @@ const SCHEMAS = {
   test_climate: z.object({ target: Target, warmer_c: z.number(), rain_change_pct: z.number() }).strict(),
   crop_info: z.object({ crop: z.enum(CROP_IDS as [string, ...string[]]) }).strict(),
   season_plan: z.object({ target: Target }).strict(),
-  show_on_land: z.object({ option: z.enum(OPTION_KEYS), layer: z.enum(LAYERS) }).strict(),
+  show_on_land: z.object({ option: z.enum(PLAN_KEYS), layer: z.enum(LAYERS) }).strict(),
+  propose_change: z.object({ base: z.enum(PLAN_KEYS), slots: z.array(Slot), reason: z.string().max(400) }).strict(),
 }
 type ToolName = keyof typeof SCHEMAS
 
@@ -61,11 +90,12 @@ class ToolInputError extends Error {}
 const r = (v: number, d = 0) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null)
 const pctChange = (a: number, b: number) => (b === 0 ? null : r(((a - b) / Math.abs(b)) * 100))
 const SEASON_NAMES = ['Year 1 spring', 'Year 1 fall', 'Year 2 spring', 'Year 2 fall', 'Year 3 spring', 'Year 3 fall']
-const OPTION_TITLE: Record<string, string> = {
+const OPTION_TITLE: Record<PlanKey, string> = {
   current: 'What you do now (current rotation)',
   'small-change': 'A small change',
   best: 'Best for you',
   different: 'Another way',
+  yours: 'Your plan (edited with the helper)',
 }
 const cropName = (id: string) => CROP_BY_ID[id].name.replace(/ \(.*\)$/, '')
 
@@ -139,10 +169,21 @@ function toSlots(raw: string[]): Slots {
   return raw.map((x) => (x === 'none' ? null : x))
 }
 
+function planSlots(ctx: AgentContext, key: PlanKey): Slots {
+  if (key === 'yours') {
+    if (!ctx.yours) throw new ToolInputError('The farmer has no edited plan ("yours") yet. Use one of the options, or propose_change to make one.')
+    return ctx.yours.slots
+  }
+  return strategyFor(ctx, key).rotation.slots
+}
+
 function resolveTarget(ctx: AgentContext, t: z.infer<typeof Target>): { slots: Slots; title: string } {
   if (t.option === 'custom') return { slots: toSlots(t.slots), title: 'your idea' }
-  return { slots: strategyFor(ctx, t.option).rotation.slots, title: OPTION_TITLE[t.option] }
+  return { slots: planSlots(ctx, t.option), title: OPTION_TITLE[t.option] }
 }
+
+const slotName = (id: string | null) => (id ? cropName(id) : 'nothing planted')
+const sameSlots = (a: Slots, b: Slots) => a.length === b.length && a.every((x, i) => x === b[i])
 
 function evaluationOut(ev: SlotEvaluation) {
   return {
@@ -223,9 +264,12 @@ async function getFieldOverview(ctx: AgentContext) {
 
 async function getOptions(ctx: AgentContext) {
   const base = ctx.result.strategies.find((s) => s.type === 'current')?.metrics ?? null
+  const [mine] = ctx.yours ? await ctx.evaluate(ctx.input, [{ slots: ctx.yours.slots }]) : [null]
   return {
     out: {
       note: INCOME_NOTE,
+      farmer_is_looking_at: { option: ctx.viewing, title: OPTION_TITLE[ctx.viewing] },
+      your_plan: mine && ctx.yours ? { option: 'yours', title: OPTION_TITLE.yours, started_from: ctx.yours.from, ...evaluationOut(mine) } : null,
       options: ctx.result.strategies.map((s) => ({
         option: s.type,
         title: OPTION_TITLE[s.type],
@@ -244,7 +288,7 @@ async function getOptions(ctx: AgentContext) {
         talk_to_your_agronomist_about: s.card.extension,
       })),
     },
-    summary: 'Looked at your options',
+    summary: `Looked at your plans (on screen: ${OPTION_TITLE[ctx.viewing].toLowerCase()})`,
     sources: [...new Set(ctx.result.strategies.flatMap((s) => s.card.evidence.map((e) => e.source)))],
   }
 }
@@ -390,6 +434,49 @@ async function seasonPlan(ctx: AgentContext, target: z.infer<typeof Target>) {
   }
 }
 
+async function proposeChange(ctx: AgentContext, baseKey: PlanKey, slotsRaw: string[], reason: string) {
+  if (!ctx.requestApproval) throw new ToolInputError('Changes cannot be proposed right now.')
+  const before = planSlots(ctx, baseKey)
+  const after = toSlots(slotsRaw)
+  if (sameSlots(before, after)) throw new ToolInputError('This rotation is the same as the plan; nothing would change.')
+  const [ev, baseEv] = await ctx.evaluate(ctx.input, [{ slots: after }, { slots: before }])
+  const changed = after.flatMap((id, i) => (id === before[i] ? [] : [{ season: SEASON_NAMES[i], from: slotName(before[i]), to: slotName(id) }]))
+  const proposal: Proposal = {
+    id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+    base: baseKey,
+    baseTitle: OPTION_TITLE[baseKey],
+    before,
+    after,
+    changes: changed,
+    reason: reason.trim(),
+    problems: ev.validity.reasons,
+    metrics: ev.metrics,
+    baseMetrics: baseEv.metrics,
+  }
+  const yoursBefore = ctx.yours
+  const allowed = await ctx.requestApproval(proposal)
+  if (!allowed) {
+    return {
+      out: { decision: 'denied', plan: baseKey, note: 'The farmer said no. Nothing changed. Ask what they would prefer instead; do not propose the same change again.' },
+      summary: `Proposed a change to ${OPTION_TITLE[baseKey].toLowerCase()}: you said no`,
+      sources: [],
+    }
+  }
+  ctx.applyPlan({ from: baseKey === 'yours' && yoursBefore ? yoursBefore.from : (baseKey as OptionKey), slots: after })
+  return {
+    out: {
+      decision: 'allowed',
+      now_on_screen: 'yours',
+      changed_seasons: changed,
+      ...evaluationOut(ev),
+      change_versus_plan_before_the_change: ev.metrics && baseEv.metrics ? changes(ev.metrics, baseEv.metrics) : null,
+      note: INCOME_NOTE,
+    },
+    summary: `Changed ${OPTION_TITLE[baseKey].toLowerCase()}: you allowed it`,
+    sources: evidenceSources(ev),
+  }
+}
+
 /** Run one tool call. Never throws: errors come back as an is_error result the model can read. */
 export async function runTool(name: string, rawInput: unknown, ctx: AgentContext): Promise<ToolOutput> {
   try {
@@ -429,6 +516,11 @@ export async function runTool(name: string, rawInput: unknown, ctx: AgentContext
         const err = ctx.showOnLand(x.option, x.layer)
         if (err) throw new ToolInputError(err)
         res = { out: { shown: true, option: x.option, layer: x.layer }, summary: `Showed ${OPTION_TITLE[x.option].toLowerCase()} on your land`, sources: ['NASA SRTM elevation'] }
+        break
+      }
+      case 'propose_change': {
+        const x = input as z.infer<typeof SCHEMAS.propose_change>
+        res = await proposeChange(ctx, x.base, x.slots, x.reason)
         break
       }
     }

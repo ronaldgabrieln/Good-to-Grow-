@@ -10,6 +10,9 @@ export const SLOT_VALUES = [...CROP_IDS, 'none']
 export const OPTION_KEYS = ['current', 'small-change', 'best', 'different'] as const
 export const LAYERS = ['erosion', 'water', 'satellite'] as const
 export type OptionKey = (typeof OPTION_KEYS)[number]
+/** Plans the farmer can look at: the engine's options plus "yours", the plan edited with the helper. */
+export const PLAN_KEYS = [...OPTION_KEYS, 'yours'] as const
+export type PlanKey = (typeof PLAN_KEYS)[number]
 
 const SLOTS_SCHEMA = {
   type: 'array',
@@ -25,8 +28,9 @@ const TARGET_SCHEMA = {
   properties: {
     option: {
       type: 'string',
-      enum: [...OPTION_KEYS, 'custom'],
-      description: 'One of the options shown to the farmer, or "custom" to use the slots field.',
+      enum: [...PLAN_KEYS, 'custom'],
+      description:
+        'One of the plans shown to the farmer ("yours" is the plan the farmer edited with you, if they have one), or "custom" to use the slots field.',
     },
     slots: { ...SLOTS_SCHEMA, description: 'Only read when option is "custom"; send an empty array otherwise. ' + SLOTS_SCHEMA.description },
   },
@@ -47,7 +51,7 @@ export const AGENT_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'get_options',
     description:
-      'The rotation options on screen: the farmer\'s current rotation and the suggested ones (small change, best, different). For each: crops by season, modeled water, income index, soil, nitrogen, erosion, pest-break and failure-risk figures, the precomputed % change versus the current rotation, why it was suggested, risks, evidence and the extension-agent advice.',
+      'The plans on screen: the farmer\'s current rotation, the suggested ones (small change, best, different) and the farmer\'s edited plan ("yours") if there is one, plus which plan the farmer is looking at. For each: crops by season, modeled water, income index, soil, nitrogen, erosion, pest-break and failure-risk figures, the precomputed % change versus the current rotation, why it was suggested, risks, evidence and the extension-agent advice.',
     input_schema: noInput,
     strict: true,
   },
@@ -121,10 +125,26 @@ export const AGENT_TOOLS: Anthropic.Beta.BetaTool[] = [
     input_schema: {
       type: 'object',
       properties: {
-        option: { type: 'string', enum: [...OPTION_KEYS] },
+        option: { type: 'string', enum: [...PLAN_KEYS] },
         layer: { type: 'string', enum: [...LAYERS] },
       },
       required: ['option', 'layer'],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: 'propose_change',
+    description:
+      "Propose a change to one of the farmer's plans. The app replays the changed rotation, shows the farmer what changes (seasons, water, income, soil) and asks them to Allow or Deny; this call returns their decision. If allowed, the changed rotation becomes \"yours\" (Your plan) and is shown on screen. Send the complete 6-season rotation after the change, keeping every season the farmer did not want changed. One proposal at a time; never say a plan was changed unless this returns decision \"allowed\".",
+    input_schema: {
+      type: 'object',
+      properties: {
+        base: { type: 'string', enum: [...PLAN_KEYS], description: 'The plan being changed.' },
+        slots: { ...SLOTS_SCHEMA, description: 'The whole rotation after the change. ' + SLOTS_SCHEMA.description },
+        reason: { type: 'string', description: 'One short plain sentence, in the language the farmer uses, saying what changes and why.' },
+      },
+      required: ['base', 'slots', 'reason'],
       additionalProperties: false,
     },
     strict: true,

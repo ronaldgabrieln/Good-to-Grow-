@@ -173,7 +173,7 @@ export function RotationRing(props: { slots: Slots; current?: Slots }) {
               textAnchor="middle"
               dominantBaseline="central"
             >
-              Y{y + 1}
+              Year {y + 1}
             </text>
           )
         })}
