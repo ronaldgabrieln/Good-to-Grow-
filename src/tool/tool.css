@@ -3,16 +3,16 @@
    validated dataviz slots and stay unchanged. */
 .tool {
   color-scheme: light;
-  --bg: #dfe9e3; /* landing sky */
+  --bg: #c4d8cd; /* landing sky */
   --surface: #fffdf8; /* paper */
   --surface-2: #f4f1e8;
   --line: #e4dfd1;
   --text: #24425a; /* logo navy */
   --text-2: #4c6173;
   --text-3: #7a8a94;
-  --accent: #2a6b2f; /* "Smart farming" green */
+  --accent: #345e50; /* dark details (deep sage green) */
   --accent-ink: #ffffff;
-  --accent-soft: #e3eedf;
+  --accent-soft: #e4eee8;
   --tape: rgba(140, 186, 160, 0.55);
   --warn-bg: #fdf1dc;
   --warn-line: #e8b65c;
@@ -20,15 +20,15 @@
   --paper-shadow: 0 1px 0 rgba(36, 66, 90, 0.06), 0 6px 18px -8px rgba(36, 66, 90, 0.28);
   --hand: 'Gaegu', 'Comic Sans MS', 'Segoe Print', cursive;
   --body: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  /* data colors (validated: dataviz palette slots 1, 3, 4 + 2) */
-  --cash: #2a78d6;
-  --cover: #1baf7a;
-  --forage: #eda100;
-  --rain: #2a78d6;
-  --et0: #eb6834;
-  --bare: #b9b6ac;
-  --rainy-wash: rgba(42, 120, 214, 0.08);
-  --hot-wash: rgba(235, 104, 52, 0.12);
+  /* data colors, taken from the site's own palette (wheel, stickers, climate chart) */
+  --cash: #7b4e59; /* wheel's plum */
+  --cover: #80a752; /* wheel's leaf green */
+  --forage: #d2a644; /* straw gold, like the "earn more" coins */
+  --rain: #496370;
+  --et0: #b64f52;
+  --bare: #a89a84; /* dry earth */
+  --rainy-wash: rgba(73, 99, 112, 0.1); /* rain color, washed out */
+  --hot-wash: rgba(182, 79, 82, 0.12); /* ET₀ red, washed out */
   --meter: #2a78d6;
   --observed: #1c5cab;
   --modeled: #6250d6;
@@ -82,6 +82,10 @@
 .tool-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .tool-brand > div { display: flex; flex-direction: column; min-width: 0; }
 .brand-logo { display: block; height: 52px; width: auto; }
+/* The logo doubles as a "home" link */
+.brand-home { display: block; flex: none; width: fit-content; border-radius: 8px; transition: translate 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
+@media (hover: hover) { .brand-home:hover { translate: 0 -3px; } }
+.brand-home:focus-visible { outline: 3px dashed var(--accent); outline-offset: 4px; }
 .home-btn { flex: none; padding: 0; border: 0; background: none; cursor: pointer; }
 .home-btn img { display: block; height: 38px; width: auto; transition: translate 0.25s cubic-bezier(0.22, 1, 0.36, 1), filter 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
 /* same "rise" hover as the landing / our story paper buttons */
@@ -279,7 +283,7 @@
   overflow: visible;
 }
 .seg-cash { background: var(--cash); }
-.seg-cover { background: var(--cover); color: #06281b; }
+.seg-cover { background: var(--cover); color: #1d3310; }
 .seg-forage { background: var(--forage); color: #2b1d00; }
 .seg-bare { top: 12px; bottom: 12px; background: repeating-linear-gradient(45deg, var(--bare) 0 2px, transparent 2px 6px); border-radius: 2px; }
 .cal-tip { top: -46px; }
@@ -309,7 +313,7 @@
 .strategy { font-size: 14px; }
 .strategy-current { background: var(--surface-2); }
 .strategy-best { box-shadow: var(--paper-shadow), 0 0 0 2px var(--accent); }
-.strategy-best::before { background: rgba(42, 107, 47, 0.45); }
+.strategy-best::before { background: rgba(52, 94, 80, 0.45); }
 .strategy header { display: flex; flex-direction: column; gap: 6px; }
 .strategy .type { font: 700 18px/1 var(--hand); color: var(--accent); }
 .strategy h3 { font-size: 23px; }
@@ -360,11 +364,15 @@
 /* ═════════ Simple results: the land in 3D + a few plain choices ═════════ */
 .bar-change { margin-left: auto; }
 .tool-bar .home-btn { margin-left: 4px; }
-/* "change field" and "back" paper buttons: same height so the papers match */
+/* "change field" and "home" paper buttons: the papers end up the same height.
+   change_field.svg has more empty margin (paper = 92% of its height vs 98% for home.svg),
+   so its image is drawn ~6.7% taller. */
 .tool-bar .bar-change { margin-left: auto; }
 .tool-bar .home-btn img { height: 46px; }
+.tool-bar .bar-change img { height: calc(46px * 0.98 / 0.92); }
 @media (max-width: 860px) {
   .tool-bar .home-btn img { height: 38px; }
+  .tool-bar .bar-change img { height: calc(38px * 0.98 / 0.92); }
 }
 .simple-wait { padding: 60px 20px; text-align: center; color: var(--text-2); font-size: 18px; }
 .simple {
@@ -477,9 +485,9 @@
   bottom: 20px;
   z-index: 30;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 10px 18px 9px;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px 9px 4px;
   border: 0;
   border-radius: 4px;
   background: var(--accent);
@@ -490,7 +498,12 @@
   rotate: -1deg;
   transition: transform 0.15s;
 }
-.agent-fab span { font: 600 12.5px/1.2 var(--body); opacity: 0.9; }
+.agent-fab-text { display: flex; flex-direction: column; align-items: flex-start; }
+.agent-fab-text span { font: 600 12.5px/1.2 var(--body); opacity: 0.9; }
+/* The scarecrow's head pokes out of the button's left edge */
+.agent-fab-logo { flex: none; width: 62px; height: auto; margin: -18px 0 -10px -26px; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.25)); }
+/* The whole scarecrow stands in the corner of the helper panel */
+.agent-head-logo { flex: none; width: 76px; height: auto; margin: -8px 0 -10px -8px; align-self: flex-start; }
 .agent-fab:hover { transform: rotate(-1.5deg) scale(1.03); }
 .agent-fab:focus-visible { outline: 3px dashed var(--text); outline-offset: 3px; }
 
@@ -571,7 +584,7 @@
   color: var(--text);
   font: 15px/1.4 var(--body);
 }
-.agent-input textarea:focus-visible { outline: 3px solid rgba(42, 107, 47, 0.3); border-color: var(--accent); }
+.agent-input textarea:focus-visible { outline: 3px solid rgba(52, 94, 80, 0.3); border-color: var(--accent); }
 .agent-send { width: auto; margin: 0; padding: 9px 16px; }
 .agent-foot { margin: 0; padding: 0 16px 12px; }
 @media (max-width: 520px) {
@@ -584,7 +597,8 @@
 .choice-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 108px;
-  grid-template-areas: 'goals goals' 'hero side';
+  /* goals only span the hero column: the top-right corner stays empty */
+  grid-template-areas: 'goals .' 'hero side';
   border-radius: 30px;
   background: var(--surface);
   box-shadow: var(--paper-shadow);
@@ -609,7 +623,7 @@
   color: var(--accent);
   font-size: 12.5px;
   font-weight: 800;
-  box-shadow: 0 0 0 1px rgba(42, 107, 47, 0.12);
+  box-shadow: 0 0 0 1px rgba(52, 94, 80, 0.12);
 }
 .hero-pill--title { padding: 3px 16px; background: var(--accent); color: #fff; font: 700 22px/1.15 var(--hand); box-shadow: none; }
 .hero-stats { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; font-size: 14px; font-weight: 700; }
@@ -651,6 +665,11 @@
   box-shadow: 0 3px 0 rgba(36, 66, 90, 0.14);
   transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s, filter 0.18s, box-shadow 0.18s;
 }
+/* Sticker icons sit inside the colored square (a little less padding than the line glyphs) */
+.choice-tile-icon.is-sticker { padding: 15%; }
+/* the drawing is placed inside this square by stickerStyle() so it sits dead center */
+.sticker-box { position: relative; display: block; width: 100%; height: 100%; }
+.sticker-box img { position: absolute; display: block; max-width: none; }
 .choice-tile-label { font: 700 16px/1.05 var(--hand); text-align: center; text-wrap: balance; }
 .choice-tile.is-on { color: var(--text); }
 .choice-tile.is-on .choice-tile-icon { opacity: 1; filter: none; transform: translateY(-3px); box-shadow: 0 6px 0 rgba(36, 66, 90, 0.2); }
@@ -660,7 +679,7 @@
 .choice-goals { grid-area: goals; padding: 14px 18px 4px; border-bottom: 1px dashed var(--line); }
 .choice-goals-q { display: block; font-size: 13.5px; font-weight: 800; color: var(--text-2); }
 .choice-hero { grid-area: hero; }
-.choice-tiles--side { grid-area: side; }
+.choice-tiles--side { grid-area: side; justify-content: flex-start; padding-top: 26px; }
 .choice-tiles--top { flex-direction: row; justify-content: space-around; gap: 10px; padding: 10px 0 8px; }
 .choice-tiles--top .choice-tile { flex: 1; min-width: 0; max-width: 120px; }
 .choice-tiles--top .choice-tile-icon { max-width: 56px; }
@@ -682,7 +701,7 @@
 }
 
 /* ═════════ 3-year plan as a ring (inside the choice hero) ═════════ */
-.ring { position: relative; width: 100%; max-width: 440px; margin: 0 auto; container-type: inline-size; }
+.ring { position: relative; width: 100%; max-width: 480px; margin: 0 auto; container-type: inline-size; }
 .ring-svg { display: block; width: 100%; height: auto; overflow: visible; }
 .ring-seg { cursor: pointer; outline: none; transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s, filter 0.2s; }
 .ring-svg.has-lit .ring-seg:not(.is-lit) { opacity: 0.45; }
@@ -699,7 +718,7 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 32%; /* inner circle (R_IN 92 of a 250 half-viewBox) is ~37% of the width */
+  width: 30%; /* inner circle (R_IN 86 of a 250 half-viewBox) is ~34% of the width */
   translate: -50% -50%;
   display: flex;
   flex-direction: column;
@@ -711,7 +730,11 @@
   color: var(--text-2);
   pointer-events: none;
 }
-.ring-center strong { font: 700 clamp(18px, 6cqw, 26px)/1.05 var(--hand); color: var(--text); overflow-wrap: anywhere; }
+.ring-center strong { font: 700 clamp(18px, 6cqw, 26px)/1.05 var(--hand); color: var(--text); overflow-wrap: anywhere; animation: ring-name-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.ring-center > * { animation: ring-info-in 0.25s ease-out; }
+@keyframes ring-name-pop { from { opacity: 0; scale: 0.6; } to { opacity: 1; scale: 1; } }
+@keyframes ring-info-in { from { opacity: 0; } to { opacity: 1; } }
+.ring-pic { pointer-events: none; }
 .ring-center em { margin-top: 2px; font-style: normal; font-weight: 800; color: var(--accent); }
 .ring-when { font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.85em; color: var(--text-3); }
 

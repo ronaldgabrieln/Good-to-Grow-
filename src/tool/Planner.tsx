@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ANALYSIS_START_YEAR, DEFAULT_CURRENT, DEFAULT_FIELD, DEFAULT_PRIORITIES, loadFieldData, type FieldData, type FieldInput, type LoadStep, type Priorities, type Slots } from '../engine'
+import { ANALYSIS_START_YEAR, DEFAULT_CURRENT, DEFAULT_FIELD, DEFAULT_PRIORITIES, loadFieldData, type FieldData, type FieldInput, type LoadStep, type Priorities, type Scenario, type Slots } from '../engine'
 import { CropPicker } from './CropPicker'
 import DecisionTool from './DecisionTool'
 import { findFrames, type Frame } from './landsatFrames'
@@ -7,9 +7,20 @@ import { LoadingScreen } from './LoadingScreen'
 import { MapPicker, type PickedPoint } from './MapPicker'
 import { PriorityPicker } from './PriorityPicker'
 import { loadTerrain, type Terrain } from './terrain/terrain'
+import type { PlanKey } from '../agent/toolDefs'
+import type { YourPlan } from '../agent/toolHandlers'
+import type { SavedStrategy } from '../profile/types'
 import './flow.css'
 
 type Stage = 'pick' | 'crops' | 'priorities' | 'analyzing' | 'results'
+
+/** What a reopened saved plan brings back on top of location, crops and priorities. */
+interface Restore {
+  field: FieldInput
+  scenario: Scenario
+  selected: PlanKey
+  yours: YourPlan | null
+}
 
 const STEP_TEXT: Record<LoadStep | 'engine' | 'start', string> = {
   start: 'Getting ready…',
@@ -48,6 +59,7 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
   const [startedAt, setStartedAt] = useState(0)
   const [now, setNow] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [restore, setRestore] = useState<Restore | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const urlsRef = useRef<string[]>([])
 
@@ -58,15 +70,18 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
   }
   useEffect(() => releaseFrames, [])
 
-  const analyze = useCallback((slots: Slots, prios: Priorities) => {
-    if (!picked) return
+  const analyze = useCallback((slots: Slots, prios: Priorities, opts: { at?: PickedPoint; restore?: Restore } = {}) => {
+    const at = opts.at ?? picked
+    if (!at) return
+    setRestore(opts.restore ?? null)
     setCurrent(slots)
     setPriorities(prios)
     setAnswered(true)
     releaseFrames()
     const ctrl = new AbortController()
     abortRef.current = ctrl
-    const f = fieldFor(picked)
+    // A reopened plan keeps its own field inputs (well salinity, irrigation); slope comes from SRTM again.
+    const f = opts.restore ? { ...opts.restore.field, lat: at.lat, lon: at.lon } : fieldFor(at)
     setField(f)
     setData(null)
     setTerrain(null)
@@ -130,6 +145,15 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
     if (complete) setPlayComplete(true)
   }, [])
 
+  /** Reopen a saved plan: same place, crops, priorities, climate test and plan on the card. */
+  const openSaved = useCallback((saved: SavedStrategy) => {
+    const p = saved.payload
+    const at = { lat: saved.lat, lon: saved.lon }
+    setPicked(at)
+    const yours = p.plan.key === 'yours' && p.plan.fromKey ? { from: p.plan.fromKey, slots: p.plan.slots } : null
+    analyze(p.current, p.priorities, { at, restore: { field: p.field, scenario: p.scenario, selected: yours || p.plan.key !== 'yours' ? p.plan.key : 'best', yours } })
+  }, [analyze])
+
   const onFirstResult = useCallback(() => setEngineReady(true), [])
   const onExited = useCallback(() => setStage('results'), [])
   const changeLocation = useCallback(() => {
@@ -170,6 +194,10 @@ export default function Planner({ onHome }: { onHome?: () => void }) {
           initialField={field}
           initialCurrent={current}
           initialPriorities={priorities}
+          initialScenario={restore?.scenario}
+          initialSelected={restore?.selected}
+          initialYours={restore?.yours}
+          onOpenSaved={openSaved}
           terrain={terrain}
           terrainError={terrainError}
           frames={frames}

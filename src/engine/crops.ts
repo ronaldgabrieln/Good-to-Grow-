@@ -170,6 +170,14 @@ export const CROPS: Crop[] = [
     tOpt: [15, 20], frostKillC: -6, heatStressC: 28, salinity: { threshold: 2.0, slope: 7.6 },
     nDemandKg: 120, nCreditKg: 0, residueT: 0.5, marketIndex: 5, irrigation: 'full', returnYears: 2,
   },
+  // ───────────── Lamiaceae ─────────────
+  {
+    id: 'basil', name: 'Basil', nameEs: 'Albahaca', family: 'Lamiaceae', kind: 'cash',
+    plant: { A: APR1 }, stages: [20, 30, 40, 10], kc: [0.6, 1.0, 0.9], rootDepthM: 0.4, p: 0.35, maxCover: 0.6,
+    tOpt: [20, 30], frostKillC: 1, heatStressC: 38, salinity: { threshold: 1.5, slope: 12, estimated: true },
+    nDemandKg: 100, nCreditKg: 0, residueT: 0.5, marketIndex: 8, irrigation: 'full', returnYears: 2,
+    notes: 'Not in FAO-56; parameters taken from cilantro/leafy-herb analogues. Warm-season and frost-tender, so spring only; cut several times over the summer.',
+  },
   // ───────────── Rosaceae ─────────────
   {
     id: 'strawberry', name: 'Strawberry (annual)', nameEs: 'Fresa', family: 'Rosaceae', kind: 'cash',

@@ -17,6 +17,7 @@ import {
   type Strategy,
 } from '../engine'
 import { doyToLabel } from '../engine/features'
+import type { SavedStrategy } from '../profile/types'
 import { CROP_IDS, LAYERS, PLAN_KEYS, SLOT_VALUES, type OptionKey, type PlanKey } from './toolDefs'
 
 /** The farmer's own plan, made by allowing a change the helper proposed. */
@@ -53,6 +54,24 @@ export interface AgentContext {
   applyPlan: (plan: YourPlan) => void
   /** Shows a proposal in the chat and resolves with the farmer's decision (set by the agent loop). */
   requestApproval?: (p: Proposal) => Promise<boolean>
+  /** The signed-in farmer's profile (Supabase), or null/absent when nobody is signed in. */
+  farmer?: FarmerMemory | null
+  /** Save a fact to the farmer's memory. Only called after the farmer allows it. */
+  remember?: (fact: string) => Promise<void>
+  /** Shows a memory proposal in the chat and resolves with the farmer's decision (set by the agent loop). */
+  requestMemoryApproval?: (m: MemoryProposal) => Promise<boolean>
+}
+
+export interface FarmerMemory {
+  username: string
+  memories: { fact: string; created_at: string }[]
+  strategies: SavedStrategy[]
+}
+
+/** A fact the helper wants to remember; the farmer allows or denies it in the chat. */
+export interface MemoryProposal {
+  id: string
+  fact: string
 }
 
 export interface ToolOutput {
@@ -80,6 +99,8 @@ const SCHEMAS = {
   season_plan: z.object({ target: Target }).strict(),
   show_on_land: z.object({ option: z.enum(PLAN_KEYS), layer: z.enum(LAYERS) }).strict(),
   propose_change: z.object({ base: z.enum(PLAN_KEYS), slots: z.array(Slot), reason: z.string().max(400) }).strict(),
+  recall_farmer: z.object({}).strict(),
+  propose_memory: z.object({ fact: z.string().trim().min(3).max(200) }).strict(),
 }
 type ToolName = keyof typeof SCHEMAS
 
@@ -477,6 +498,67 @@ async function proposeChange(ctx: AgentContext, baseKey: PlanKey, slotsRaw: stri
   }
 }
 
+const savedOn = (iso: string) => iso.slice(0, 10)
+
+async function recallFarmer(ctx: AgentContext) {
+  const f = ctx.farmer
+  if (!f) {
+    return {
+      out: { signed_in: false, note: 'Nobody is signed in, so nothing is remembered and no plans are saved. The farmer can sign in with a username at the top of the screen to save plans and let you remember facts.' },
+      summary: 'Checked your profile: not signed in',
+      sources: [],
+    }
+  }
+  return {
+    out: {
+      signed_in: true,
+      username: f.username,
+      remembered_facts: f.memories.map((m) => ({ fact: m.fact, saved_on: savedOn(m.created_at) })),
+      saved_plans: f.strategies.slice(0, 10).map((s) => {
+        const p = s.payload
+        return {
+          title: s.title,
+          saved_on: savedOn(s.created_at),
+          place: s.field_name,
+          latitude: r(s.lat, 3),
+          longitude: r(s.lon, 3),
+          plan: p.plan.title,
+          rotation: p.plan.label,
+          seasons: seasons(p.plan.slots),
+          figures_when_saved: figures(p.plan.metrics),
+          change_versus_current_rotation_when_saved: p.plan.baseMetrics ? changes(p.plan.metrics, p.plan.baseMetrics) : null,
+          climate_test_when_saved: p.scenario.deltaTempC || p.scenario.rainChange ? { warmer_c: p.scenario.deltaTempC, rain_change_pct: r(p.scenario.rainChange * 100) } : null,
+        }
+      }),
+      note:
+        'Remembered facts were stated by the farmer and kept with their permission: treat them as the farmer’s own information, not as results of this analysis, and say so when you use them. Saved plans were computed when saved (same engine), possibly for another field or before data changed; use the tools for current figures. ' + INCOME_NOTE,
+    },
+    summary: `Checked what I remember about you (${f.memories.length} notes, ${f.strategies.length} saved plans)`,
+    sources: ['Your saved profile'],
+  }
+}
+
+async function proposeMemory(ctx: AgentContext, fact: string) {
+  if (!ctx.farmer) throw new ToolInputError('Nobody is signed in, so nothing can be remembered. Tell the farmer they can sign in with a username at the top of the screen.')
+  if (!ctx.requestMemoryApproval || !ctx.remember) throw new ToolInputError('Memory cannot be changed right now.')
+  const clean = fact.trim().replace(/\s+/g, ' ')
+  if (ctx.farmer.memories.some((m) => m.fact.toLowerCase() === clean.toLowerCase())) throw new ToolInputError('This is already remembered.')
+  const allowed = await ctx.requestMemoryApproval({ id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, fact: clean })
+  if (!allowed) {
+    return {
+      out: { decision: 'denied', note: 'The farmer said no. Nothing was saved. Do not ask to remember this again.' },
+      summary: 'Asked to remember something: you said no',
+      sources: [],
+    }
+  }
+  await ctx.remember(clean)
+  return {
+    out: { decision: 'allowed', remembered: clean },
+    summary: 'Remembered a note about your farm: you allowed it',
+    sources: ['Your saved profile'],
+  }
+}
+
 /** Run one tool call. Never throws: errors come back as an is_error result the model can read. */
 export async function runTool(name: string, rawInput: unknown, ctx: AgentContext): Promise<ToolOutput> {
   try {
@@ -523,6 +605,12 @@ export async function runTool(name: string, rawInput: unknown, ctx: AgentContext
         res = await proposeChange(ctx, x.base, x.slots, x.reason)
         break
       }
+      case 'recall_farmer':
+        res = await recallFarmer(ctx)
+        break
+      case 'propose_memory':
+        res = await proposeMemory(ctx, (input as z.infer<typeof SCHEMAS.propose_memory>).fact)
+        break
     }
     return { content: JSON.stringify(res.out), isError: false, summary: res.summary, sources: res.sources }
   } catch (e) {

@@ -1,0 +1,49 @@
+/* Farmer profile: header button, the profile drawer (left side, so it never covers the helper on
+   the right), saved-plan rows and the helper's memory list. Uses the planner's tokens (.tool). */
+.profile-btn {
+  display: inline-flex; align-items: center; gap: 8px; flex: none;
+  margin-left: auto; padding: 5px 12px 5px 5px;
+  border: 0; border-radius: 999px; background: var(--surface); color: var(--text);
+  font: 700 14px var(--body); cursor: pointer;
+  box-shadow: 1px 2px 0 rgba(36, 66, 90, 0.18), 0 0 0 1px var(--line);
+}
+.profile-btn:focus-visible { outline: 3px dashed var(--accent); outline-offset: 2px; }
+.profile-avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-size: 14px; }
+.tool-bar .profile-btn + .bar-change { margin-left: 10px; }
+
+.profile-panel.agent { left: 0; right: auto; z-index: 41; }
+.profile-body h3 { margin: 0 0 4px; font-size: 16px; }
+.profile-body section { display: flex; flex-direction: column; gap: 8px; }
+.profile-body section + section { border-top: 1px dashed var(--line); padding-top: 14px; }
+.profile-signin { display: flex; flex-direction: column; gap: 8px; }
+.profile-signin p { margin: 0; }
+.profile-signin label { font-weight: 800; font-size: 13.5px; }
+.profile-row { display: flex; gap: 8px; align-items: center; }
+.profile-row input {
+  flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+  font: 15px var(--body); background: #fff; color: var(--text);
+}
+.profile-row input:focus-visible { outline: 3px solid rgba(42, 107, 47, 0.3); border-color: var(--accent); }
+.profile-row .btn, .saved-actions .btn, .plan-save .btn { width: auto; margin: 0; flex: none; }
+.profile-error { margin: 0; color: var(--error); font-size: 13px; font-weight: 700; }
+.profile-danger { background: var(--error); }
+
+.saved-list, .memory-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.saved { background: var(--surface); border-radius: 8px; padding: 10px 12px; box-shadow: var(--paper-shadow); display: flex; flex-direction: column; gap: 4px; }
+.saved p { margin: 0; }
+.saved-h { display: flex; flex-direction: column; }
+.saved-rot { font-size: 13.5px; color: var(--text-2); }
+.saved-actions { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 4px; }
+.saved-actions .btn { padding: 6px 10px; font-size: 13px; }
+.memory-list li { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; background: var(--surface); border-radius: 6px; padding: 6px 4px 6px 10px; font-size: 14px; box-shadow: 0 0 0 1px var(--line); }
+
+/* Save / PDF row under the plan on the card */
+.plan-save { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; width: 100%; }
+.plan-save .btn { padding: 7px 14px; font-size: 14px; }
+.plan-save-msg { font-size: 13px; color: var(--text-2); }
+.plan-save-msg.is-error { color: var(--error); font-weight: 700; }
+.plan-save input { flex: 1 1 200px; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; font: 14px var(--body); }
+
+/* Memory proposals in the helper's chat (same shape as plan proposals) */
+.memory-card { border-left: 4px solid var(--accent); }
+.memory-card .proposal-title { font-style: italic; }

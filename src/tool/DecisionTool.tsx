@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   CROP_BY_ID,
   DEFAULT_PRIORITIES,
@@ -17,6 +17,11 @@ import {
 } from '../engine'
 import type { PlanKey } from '../agent/toolDefs'
 import type { AgentContext, YourPlan } from '../agent/toolHandlers'
+import { useProfile } from '../profile/ProfileContext'
+import { ProfileButton, ProfilePanel } from '../profile/ProfilePanel'
+import { PlanSaveBar } from '../profile/PlanSaveBar'
+import { buildPayload } from '../profile/snapshot'
+import type { SavedStrategy } from '../profile/types'
 import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { BrandLogo, HomeButton } from './Brand'
 import { ClimatePanel } from './ClimatePanel'
@@ -34,7 +39,14 @@ import type { Terrain } from './terrain/terrain'
 import { useEngine } from './useEngine'
 import { useEvaluator } from './useEvaluator'
 import './tool.css'
-import changeFieldImg from '../assets/Hello (9).svg'
+import changeFieldImg from '../assets/change_field.svg'
+import iconBalanced from '../assets/a_bit_of_everything.svg'
+import iconWater from '../assets/save_water.svg'
+import iconIncome from '../assets/earn_more.svg'
+import iconSoil from '../assets/healthier_soil.svg'
+import iconCurrent from '../assets/what_you_do_now.svg'
+import iconBest from '../assets/best_for_you.svg'
+import iconDifferent from '../assets/another_way.svg'
 
 type GoalKey = 'balanced' | 'water' | 'income' | 'soil'
 const GOALS: { key: GoalKey; label: string; priorities: Priorities }[] = [
@@ -58,7 +70,37 @@ interface PlanView {
   edits?: string[]
 }
 
-/** Hand-drawn little glyphs for the tiles (stroke only, drawn in white on the tile). */
+/**
+ * Hand-drawn sticker icons for the tiles (src/assets, named after each tile).
+ * The drawings are not centered inside their SVGs, so each one carries where its drawing sits
+ * (measured from the file): canvas w/h, drawing center cx/cy and drawing size fw/fh as fractions.
+ */
+type Sticker = { src: string; w: number; h: number; cx: number; cy: number; fw: number; fh: number }
+const TILE_STICKERS: Partial<Record<PlanKey | GoalKey, Sticker>> = {
+  balanced: { src: iconBalanced, w: 495, h: 591, cx: 0.54, cy: 0.581, fw: 0.77, fh: 0.66 },
+  water: { src: iconWater, w: 354, h: 456, cx: 0.532, cy: 0.52, fw: 0.57, fh: 0.71 },
+  income: { src: iconIncome, w: 432, h: 456, cx: 0.543, cy: 0.59, fw: 0.67, fh: 0.82 },
+  soil: { src: iconSoil, w: 522, h: 519, cx: 0.443, cy: 0.546, fw: 0.88, fh: 0.81 },
+  current: { src: iconCurrent, w: 537, h: 474, cx: 0.52, cy: 0.489, fw: 0.75, fh: 0.58 },
+  best: { src: iconBest, w: 435, h: 414, cx: 0.517, cy: 0.473, fw: 0.71, fh: 0.77 },
+  different: { src: iconDifferent, w: 543, h: 495, cx: 0.494, cy: 0.507, fw: 0.63, fh: 0.75 },
+}
+
+/** Places a sticker so its drawing (not its canvas) fills and is centered in the square. */
+function stickerStyle(s: Sticker): CSSProperties {
+  const aspect = (s.fw * s.w) / (s.fh * s.h) // drawing width / height
+  const drawW = aspect >= 1 ? 1 : aspect // drawing size as a fraction of the square
+  const imgW = drawW / s.fw
+  const imgH = (imgW * s.h) / s.w
+  return {
+    width: `${imgW * 100}%`,
+    height: `${imgH * 100}%`,
+    left: `${(0.5 - s.cx * imgW) * 100}%`,
+    top: `${(0.5 - s.cy * imgH) * 100}%`,
+  }
+}
+
+/** Tiles without a sticker yet keep a little glyph, drawn in white on a colored square. */
 function TileIcon({ type }: { type: PlanKey | GoalKey }) {
   const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 3.2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
   return (
@@ -117,7 +159,7 @@ function TileIcon({ type }: { type: PlanKey | GoalKey }) {
 }
 
 /** The big middle of the card: what the picked plan is, and why. */
-function OptionHero(props: { plan: PlanView; base: RotationMetrics | null; current?: Slots; onReview: () => void; onUndo?: () => void }) {
+function OptionHero(props: { plan: PlanView; base: RotationMetrics | null; current?: Slots; onReview: () => void; onUndo?: () => void; extra?: ReactNode }) {
   const { plan } = props
   const isCurrent = plan.key === 'current'
   const stats = isCurrent || !plan.metrics ? [] : plainStats(plan.metrics, props.base)
@@ -153,12 +195,14 @@ function OptionHero(props: { plan: PlanView; base: RotationMetrics | null; curre
             Undo my changes
           </button>
         )}
+        {props.extra}
       </div>
     </div>
   )
 }
 
 function Tile(props: { kind: PlanKey | GoalKey; label: string; selected: boolean; onSelect: () => void; radio?: boolean }) {
+  const sticker = TILE_STICKERS[props.kind]
   return (
     <button
       type="button"
@@ -168,9 +212,17 @@ function Tile(props: { kind: PlanKey | GoalKey; label: string; selected: boolean
       aria-checked={props.radio ? props.selected : undefined}
       onClick={props.onSelect}
     >
-      <span className="choice-tile-icon">
-        <TileIcon type={props.kind} />
-      </span>
+      {sticker ? (
+        <span className="choice-tile-icon is-sticker">
+          <span className="sticker-box">
+            <img src={sticker.src} alt="" style={stickerStyle(sticker)} />
+          </span>
+        </span>
+      ) : (
+        <span className="choice-tile-icon">
+          <TileIcon type={props.kind} />
+        </span>
+      )}
       <span className="choice-tile-label">{props.label}</span>
     </button>
   )
@@ -181,6 +233,12 @@ export default function DecisionTool(props: {
   initialField: FieldInput
   initialCurrent: Slots
   initialPriorities?: Priorities
+  /** When reopening a saved plan: its climate test, which plan was open, and the farmer's edited plan. */
+  initialScenario?: Scenario
+  initialSelected?: PlanKey
+  initialYours?: YourPlan | null
+  /** Reopen a saved plan (location, crops, priorities): handled by the planner. */
+  onOpenSaved?: (s: SavedStrategy) => void
   terrain: Terrain | null
   terrainError: string | null
   frames: Frame[]
@@ -193,16 +251,18 @@ export default function DecisionTool(props: {
   const [field, setField] = useState<FieldInput>(props.initialField)
   const [current, setCurrent] = useState<Slots>(props.initialCurrent)
   const [priorities, setPriorities] = useState<Priorities>(props.initialPriorities ?? DEFAULT_PRIORITIES)
-  const [scenario, setScenario] = useState<Scenario>(DEFAULT_SCENARIO)
-  const [selectedKey, setSelectedKey] = useState<PlanKey>('best')
+  const [scenario, setScenario] = useState<Scenario>(props.initialScenario ?? DEFAULT_SCENARIO)
+  const [selectedKey, setSelectedKey] = useState<PlanKey>(props.initialSelected ?? 'best')
   /** The farmer's own plan, made by allowing a change the helper proposed. */
-  const [yours, setYours] = useState<YourPlan | null>(null)
+  const [yours, setYours] = useState<YourPlan | null>(props.initialYours ?? null)
   const [yoursEval, setYoursEval] = useState<{ plan: YourPlan; input: EngineInput; ev: SlotEvaluation } | null>(null)
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentRequest, setAgentRequest] = useState<AgentRequest | null>(null)
   const [layer, setLayer] = useState<TerrainLayer>('erosion')
   const [showDetails, setShowDetails] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const detailsRef = useRef<HTMLDivElement>(null)
+  const farm = useProfile()
 
   // Slope and elevation at the field come from the SRTM terrain once it has loaded.
   const syncedTerrain = useRef<Terrain | null>(null)
@@ -296,10 +356,33 @@ export default function DecisionTool(props: {
             setLayer(layerKey)
             return terrain ? null : 'The 3D view is still loading; the plan is selected and will show when it is ready.'
           },
+          farmer: farm.profile ? { username: farm.profile.username, memories: farm.memories, strategies: farm.strategies } : null,
+          remember: async (fact) => {
+            await farm.addMemory(fact, 'helper')
+          },
         }
       : null
-  }, [result, input, evaluate, terrain, selected?.key, yours])
+  }, [result, input, evaluate, terrain, selected?.key, yours, farm])
   const getAgentContext = useCallback(() => agentContext.current, [])
+
+  /** Snapshot of the plan on the card for saving or the PDF (null while it is being recomputed). */
+  const getPayload = () => {
+    if (!result || !selected?.metrics || running || yoursStale) return null
+    const card = selected.key === 'yours' ? (mine?.ev.card ?? null) : (strategies.find((s) => s.type === selected.key)?.card ?? null)
+    return buildPayload({
+      input,
+      result,
+      plan: {
+        key: selected.key,
+        slots: selected.slots,
+        metrics: selected.metrics,
+        problems: selected.problems,
+        card,
+        fromKey: selected.key === 'yours' && yours ? yours.from : undefined,
+        edits: selected.edits,
+      },
+    })
+  }
 
   const reviewPlan = (key: PlanKey) => {
     setAgentOpen(true)
@@ -318,12 +401,13 @@ export default function DecisionTool(props: {
     <div className="tool">
       <header className="tool-bar">
         <div className="tool-brand">
-          <BrandLogo />
+          <BrandLogo onHome={props.onHome} />
           <div>
             <h1>Your farm</h1>
             <span className="muted small">{field.name}</span>
           </div>
         </div>
+        <ProfileButton onClick={() => setProfileOpen((v) => !v)} />
         {/* paper button, styled like the "back" one next to it (.home-btn) */}
         <button type="button" className="home-btn bar-change" onClick={onChangeLocation}>
           <img src={changeFieldImg} alt="Change field" />
@@ -390,6 +474,7 @@ export default function DecisionTool(props: {
                         }
                       : undefined
                   }
+                  extra={<PlanSaveBar getPayload={getPayload} disabled={running || yoursStale || !selected.metrics} onNeedSignIn={() => setProfileOpen(true)} />}
                 />
                 <div className="choice-tiles choice-tiles--side" role="group" aria-label="Pick a way to plant">
                   {plans.map((p) => (
@@ -408,6 +493,18 @@ export default function DecisionTool(props: {
         </div>
       )}
 
+      <ProfilePanel
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        onOpenSaved={
+          props.onOpenSaved
+            ? (s) => {
+                setProfileOpen(false)
+                props.onOpenSaved?.(s)
+              }
+            : undefined
+        }
+      />
       {result && selected && (
         <AgentPanel getContext={getAgentContext} open={agentOpen} onOpenChange={setAgentOpen} viewingTitle={PLAIN_TITLE[selected.key]} request={agentRequest} />
       )}
