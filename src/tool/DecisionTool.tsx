@@ -32,6 +32,7 @@ import type { Terrain } from './terrain/terrain'
 import { useEngine } from './useEngine'
 import { useEvaluator } from './useEvaluator'
 import './tool.css'
+import changeFieldImg from '../assets/Hello (9).svg'
 
 /** Plain names a farmer understands. */
 const PLAIN_TITLE: Record<StrategyType, string> = {
@@ -253,8 +254,9 @@ export default function DecisionTool(props: {
             <span className="muted small">{field.name}</span>
           </div>
         </div>
-        <button className="btn btn-quiet btn-inline bar-change" onClick={onChangeLocation}>
-          Change field
+        {/* paper button, styled like the "back" one next to it (.home-btn) */}
+        <button type="button" className="home-btn bar-change" onClick={onChangeLocation}>
+          <img src={changeFieldImg} alt="Change field" />
         </button>
         <HomeButton onHome={props.onHome} />
       </header>

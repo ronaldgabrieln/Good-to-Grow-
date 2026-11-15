@@ -61,7 +61,7 @@ function App() {
 
         <nav className="menu" aria-label="Main">
           <a className="paper-btn paper-btn--visual" href="#3d-visual">
-            <img src={landingAsset('boton 1.svg')} alt="3d visual" />
+            <img src={landingAsset('Hello (7).svg')} alt="start growing" />
           </a>
           <a className="paper-btn paper-btn--story" href="#our-story">
             <img src={landingAsset('boton 2.svg')} alt="our story" />
@@ -71,7 +71,7 @@ function App() {
 
       <footer className="footer" inert={isStory}>
         <img
-          src={landingAsset('pie.svg')}
+          src={landingAsset('Hello (8).svg')}
           alt="Made with love by los carbones remix"
         />
       </footer>

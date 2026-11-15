@@ -112,6 +112,11 @@
 
 .paper-btn--visual {
   top: 46%;
+  /* "start growing" (Hello (7).svg) is 288px wide vs 317 for the others:
+     scale it so its paper is the same height as "our story" */
+  width: calc(20.5% * 288 / 317);
+  /* its paper sits further left inside the SVG; nudge so the edges line up */
+  left: 61.5%;
 }
 
 .paper-btn--story {
