@@ -238,4 +238,11 @@ describe('get_ground_readings (field sensor node)', () => {
     const answer = `Your soil went from 100% to ${json.soil_water_now_pct_of_highest_peak}% of its highest peak in ${json.hours_since_this_recordings_peak} hours.`
     expect(checkAnswer(answer, ledger).unverified).toEqual([])
   })
+
+  it('measures against an earlier, higher peak', async () => {
+    const capacity = { raw: summary!.peakRaw * 1.1, ms: summary!.peakMs - 864e5, label: 'earlier watering' }
+    const json = JSON.parse((await runTool('get_ground_readings', {}, { ...ctx, ground: { summary, label: 'night', capacity } })).content)
+    expect(json.highest_peak_from).toBe('earlier watering')
+    expect(json.soil_water_at_this_recordings_peak_pct_of_highest_peak).toBeLessThan(100)
+  })
 })

@@ -237,13 +237,16 @@
 .chart .bar-rain { fill: var(--rain); }
 .chart .line-et0 { fill: none; stroke: var(--et0); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .dot-et0 { fill: var(--et0); stroke: var(--surface); stroke-width: 2; }
+/* "From the ground": the field node's soil readings */
 .chart .line-soil { fill: none; stroke: var(--rain); stroke-width: 2; stroke-linejoin: round; }
 .chart .line-fit { fill: none; stroke: var(--et0); stroke-width: 2; stroke-dasharray: 6 4; }
 .chart .dot-soil { fill: var(--rain); stroke: var(--surface); stroke-width: 2; }
 .chart .ref-line { stroke: var(--text-3); stroke-width: 1; stroke-dasharray: 2 4; }
 .chart .ref-fc { stroke: var(--modeled); stroke-dasharray: 4 3; }
 .chart .axis-fc { fill: var(--modeled); }
-.chart .axis-raw { fill: var(--text-3); font-variant-numeric: tabular-nums; }
+.chart .ref-peak { stroke: var(--rain); stroke-dasharray: 4 3; }
+.chart .axis-peak { fill: var(--rain); font-weight: 700; }
+.chart .dot-peak { fill: var(--rain); stroke: var(--surface); stroke-width: 2; }
 .ground-load { margin-top: 12px; cursor: pointer; }
 .ground-strip { margin-top: 14px; padding: 12px 14px; border-radius: 8px; background: var(--surface); box-shadow: var(--paper-shadow); }
 .ground-strip-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
@@ -251,11 +254,8 @@
 .ground-kicker { font-size: 12px; color: var(--text-2); }
 .ground-title { font-size: 16px; }
 .ground-body { margin-top: 12px; }
+.ground-site { display: block; }
 .ground-newpeak { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
-.chart .ref-peak { stroke: var(--rain); stroke-dasharray: 4 3; }
-.chart .axis-peak { fill: var(--rain); font-weight: 700; }
-.chart .dot-peak { fill: var(--rain); stroke: var(--surface); stroke-width: 2; }
-.link-btn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
 .error-text { color: var(--error); }
 .chart .crosshair { stroke: var(--text-3); stroke-width: 1; }
 .chart-tip, .cal-tip {

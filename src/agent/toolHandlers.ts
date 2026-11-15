@@ -337,7 +337,7 @@ async function getGroundReadings(ctx: AgentContext) {
       hours_recorded: r(g.hours, 1),
       readings: g.n,
       soil_state_now: state,
-      highest_peak_recorded_in: cap.label,
+      highest_peak_from: cap.label,
       highest_peak_local_time: isoLocal(cap.ms),
       soil_water_at_this_recordings_peak_pct_of_highest_peak: wetPct(g.peakRaw),
       this_recordings_peak_local_time: isoLocal(g.peakMs),

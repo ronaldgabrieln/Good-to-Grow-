@@ -49,13 +49,6 @@ export const AGENT_TOOLS: Anthropic.Beta.BetaTool[] = [
     strict: true,
   },
   {
-    name: 'get_ground_readings',
-    description:
-      "Soil moisture measured on the farmer's own field by the GoodToGrow sensor node (a soil probe on an Arduino), as opposed to the satellite and model data: when it was recorded, how wet the soil was at the start and end, how fast it is drying, the field-capacity reading estimated from how the soil drained, the NASA POWER water demand for that month, what the readings mean, and what the sensor did not measure. Call this when the farmer asks how wet their soil is, about their sensor, or about measured (not modeled) data.",
-    input_schema: noInput,
-    strict: true,
-  },
-  {
     name: 'get_options',
     description:
       'The plans on screen: the farmer\'s current rotation, the suggested ones (small change, best, different) and the farmer\'s edited plan ("yours") if there is one, plus which plan the farmer is looking at. For each: crops by season, modeled water, income index, soil, nitrogen, erosion, pest-break and failure-risk figures, the precomputed % change versus the current rotation, why it was suggested, risks, evidence and the extension-agent advice.',
@@ -160,6 +153,13 @@ export const AGENT_TOOLS: Anthropic.Beta.BetaTool[] = [
     name: 'recall_farmer',
     description:
       "Read what is saved about this farmer in their profile: the facts they allowed you to remember and the plans they saved before (with the figures computed when they saved them). Call it once at the start of a conversation when the app note says a farmer is signed in, and whenever the farmer refers to earlier conversations or saved plans ('last time', 'the plan I saved', 'my well'). Returns signed_in false when nobody is signed in.",
+    input_schema: noInput,
+    strict: true,
+  },
+  {
+    name: 'get_ground_readings',
+    description:
+      "Soil moisture measured by the GoodToGrow sensor node (a soil probe on an Arduino), as opposed to the satellite and model data: when it was recorded, how wet the soil was at its peak and at the end (as % of the highest peak seen so far), how fast it is drying, the level the soil drains to, the NASA POWER water demand for that month, what the readings mean, and what the sensor did not measure. Call this when the farmer asks how wet their soil is, about their sensor, or about measured (not modeled) data. Returns available false when no readings are loaded.",
     input_schema: noInput,
     strict: true,
   },
