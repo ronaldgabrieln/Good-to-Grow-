@@ -81,6 +81,8 @@ const TILE_STICKERS: Partial<Record<PlanKey | GoalKey, Sticker>> = {
   water: { src: iconWater, w: 354, h: 456, cx: 0.532, cy: 0.52, fw: 0.57, fh: 0.71 },
   income: { src: iconIncome, w: 432, h: 456, cx: 0.543, cy: 0.59, fw: 0.67, fh: 0.82 },
   soil: { src: iconSoil, w: 522, h: 519, cx: 0.443, cy: 0.546, fw: 0.88, fh: 0.81 },
+  // "A small change" has no sticker of its own: it shares the sprout with "Healthier soil".
+  'small-change': { src: iconSoil, w: 522, h: 519, cx: 0.443, cy: 0.546, fw: 0.88, fh: 0.81 },
   current: { src: iconCurrent, w: 537, h: 474, cx: 0.52, cy: 0.489, fw: 0.75, fh: 0.58 },
   best: { src: iconBest, w: 435, h: 414, cx: 0.517, cy: 0.473, fw: 0.71, fh: 0.77 },
   different: { src: iconDifferent, w: 543, h: 495, cx: 0.494, cy: 0.507, fw: 0.63, fh: 0.75 },

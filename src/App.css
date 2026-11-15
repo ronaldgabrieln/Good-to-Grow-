@@ -41,7 +41,7 @@
    Only the elements that move between views are listed, so the buttons'
    hover effect (on their inner <img>) keeps working. */
 .scene:not(.is-animating)
-  :is(.frame, .logo, .paper-btn, .footer, .story-text, .story-heart, .story-doodle, .back-btn) {
+  :is(.frame, .logo, .paper-btn, .footer, .story-text, .story-heart, .story-doodle, .back-btn, .story-bg, .team-page) {
   transition: none !important;
 }
 
@@ -66,6 +66,18 @@
 .back-btn:focus-visible img {
   translate: 0 -5%;
   filter: drop-shadow(0 6px 6px rgb(0 0 0 / 0.16));
+}
+
+/* ---------- Our story's patterned background (behind everything) ---------- */
+.story-bg {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ---------- The painting frame (shared by both views) ---------- */
@@ -145,7 +157,7 @@
 /* ---------- Our story (proportions measured from the mockup) ---------- */
 .story-stage {
   position: absolute;
-  z-index: 1;
+  z-index: 3; /* above the story's scroller (2) */
   inset: 0;
   pointer-events: none;
 }
@@ -174,8 +186,68 @@
   rotate: 90deg;
 }
 
+/* ---------- Our story, page 2: the team (positions measured from the mockup) ----------
+   A 16:9 box centered in the window; everything inside is a % of it. */
+.team-page {
+  position: absolute;
+  inset: 0;
+}
+
+.team-stage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(100vw, 100vh * 16 / 9);
+  aspect-ratio: 16 / 9;
+  translate: -50% -50%;
+}
+
+.team-stage > *,
+.team-card {
+  position: absolute;
+  margin: 0;
+}
+
+.team-title {
+  left: -1.7%;
+  top: 2.7%;
+  width: 46.3%;
+}
+
+/* (.team-stage prefix: outranks `.scene img { width: 100% }`) */
+.team-stage .team-box {
+  left: 6.7%;
+  top: 29.2%;
+  width: 86.5%;
+}
+
+.team-list {
+  inset: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* all cards share one scale (16.3% wide); centers follow the mockup */
+.team-card {
+  top: 29.9%;
+  width: 16.3%;
+}
+.team-card--1 { left: 7.35%; }
+.team-card--2 { left: 20.75%; }
+.team-card--3 { left: 34.25%; }
+.team-card--4 { left: 48.15%; }
+.team-card--5 { left: 62.25%; }
+.team-card--6 { left: 77.75%; top: 34.6%; } /* the plant: shorter card */
+
+.team-stage .team-sign {
+  left: 20.2%;
+  top: 76%;
+  width: 60%;
+}
+
 .back-btn {
   position: absolute;
+  z-index: 1;
   right: 3.1vw;
   top: calc(var(--img-y) + var(--img-h) * 0.973);
   /* home.svg is a bit wider than the old back.svg (123 vs 113.25): same height */
@@ -185,8 +257,17 @@
 /* ==========================================================================
    Landing state (also the "coming back" timing)
    ========================================================================== */
+.scene[data-view='landing'] .story-bg {
+  transition: opacity 0.5s ease;
+}
+/* going home from anywhere in the story: the strip glides back (transform) */
+.scene[data-view='landing'] .team-page {
+  transition: transform 0.6s var(--ease);
+}
+
 .scene[data-view='landing'] .frame {
   transition:
+    transform 0.6s var(--ease),
     top 1.1s var(--ease),
     left 1.1s var(--ease),
     width 1.1s var(--ease),
@@ -210,6 +291,7 @@
 .scene[data-view='landing'] .story-doodle,
 .scene[data-view='landing'] .back-btn {
   transition:
+    transform 0.6s var(--ease),
     translate 0.6s var(--ease),
     opacity 0.6s var(--ease);
 }
@@ -271,7 +353,8 @@
 }
 
 
-.scene[data-view='story'] .story-stage {
+/* the pictures let the wheel/touch through to the scroller below; only home is clickable */
+.scene[data-view='story'] .back-btn {
   pointer-events: auto;
 }
 
@@ -290,6 +373,46 @@
   transition:
     translate 1s var(--ease-out) 0.15s,
     opacity 0.8s ease 0.15s;
+}
+
+/* the background fades in once the painting has started shrinking, then stays */
+.scene[data-view='story'] .story-bg {
+  opacity: 1;
+  transition: opacity 0.9s ease 0.3s;
+}
+
+/* ==========================================================================
+   Our story scrolls sideways. App.tsx writes how far the (invisible) scroller
+   is scrolled into --p (0 → 1); the scroll track is exactly 100vw taller than
+   the window, so 1 px of scroll moves everything 1 px to the left, like one
+   long strip: page 1, then the team. The offset uses `transform` (the entry
+   animation uses `translate`, so the two never fight) and has no transition
+   while on the story, so it follows the scroll exactly. The home button stays.
+   ========================================================================== */
+.story-scroll {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: #6a99a3 transparent;
+}
+.story-scroll-track {
+  height: calc(100vh + 100vw);
+}
+
+.scene :is(.frame, .story-text, .story-heart) {
+  transform: translateX(calc(var(--p, 0) * -100vw));
+}
+/* the doodle is rotated 90deg, so its own "down" is the screen's "left" */
+.scene .story-doodle {
+  transform: translateY(calc(var(--p, 0) * 100vw));
+}
+.scene .team-page {
+  transform: translateX(calc((1 - var(--p, 0)) * 100vw));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -373,6 +496,35 @@
     top: auto;
     bottom: 0;
   }
+
+  /* team: title, then the cards in a 3 × 2 grid on the gray box, then the signature */
+  .team-stage {
+    top: 4vh;
+    width: calc(100vw - 32px);
+    aspect-ratio: auto;
+    translate: -50% 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2vh;
+  }
+  .team-stage > *,
+  .team-card {
+    position: static;
+  }
+  .team-title { width: 90%; }
+  .team-stage .team-box { display: none; }
+  .team-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-items: end;
+    gap: 1vh 2vw;
+    padding: 2vh 2vw;
+    /* box.svg is a flat #c8d1d9 at 55%; the same fill stretches to any height */
+    background: rgb(200 209 217 / 0.55);
+  }
+  .team-card { width: auto; }
+  .team-stage .team-sign { width: 100%; }
 
   .back-btn {
     top: auto;

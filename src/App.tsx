@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import Planner from './tool/Planner'
 import homeImg from './assets/home.svg'
@@ -15,6 +15,16 @@ const storyAsset = (name: string) =>
 
 type View = 'landing' | 'story' | 'planner' | 'lab'
 
+// "The team" page of our story: one card per member, left to right as in the mockup.
+const TEAM = [
+  { file: 'elina.svg', alt: 'Elina Sarabia Tostado, 2nd year Software Engineering' },
+  { file: 'alonso.svg', alt: 'Alonso Aguilar Higuera, 2nd year Mechatronics Engineering' },
+  { file: 'emma.svg', alt: 'Emma Garcia Angel, 1st year Software Engineering' },
+  { file: 'ronald.svg', alt: 'Ronald G. Naraín Rivera, 2nd year Software Engineering' },
+  { file: 'elena.svg', alt: 'Elena De Basabe Vargas, 2nd year Software Engineering' },
+  { file: 'plant.svg', alt: 'Barrios, the plant' },
+]
+
 // '#3d-visual' (the landing's first button) opens the rotation planner.
 const viewFromHash = (): View => {
   const h = window.location.hash
@@ -29,23 +39,49 @@ function App() {
   // Transitions are only enabled while switching views, so opening
   // /#our-story directly or resizing the window never animates.
   const [animating, setAnimating] = useState(false)
+  const animTimer = useRef<number | undefined>(undefined)
+
+  const animate = useCallback(() => {
+    setAnimating(true)
+    window.clearTimeout(animTimer.current)
+    animTimer.current = window.setTimeout(() => setAnimating(false), 1500)
+  }, [])
 
   useEffect(() => {
-    let timer: number | undefined
     const onHash = () => {
-      setAnimating(true)
+      animate()
       setView(viewFromHash())
-      window.clearTimeout(timer)
-      timer = window.setTimeout(() => setAnimating(false), 1500)
     }
     window.addEventListener('hashchange', onHash)
     return () => {
       window.removeEventListener('hashchange', onHash)
-      window.clearTimeout(timer)
+      window.clearTimeout(animTimer.current)
     }
-  }, [])
+  }, [animate])
 
   const isStory = view === 'story'
+
+  // "Our story" really scrolls: an invisible scroller covers the page and the browser does the
+  // scrolling (wheel, trackpad momentum, touch, keys, scrollbar). How far down it is (0 → 1)
+  // goes to the CSS variable --p, which slides page 1 out to the left and the team in from the
+  // right, 1 px of scroll = 1 px sideways. Set straight on the element, so no re-render per frame.
+  const sceneRef = useRef<HTMLElement>(null)
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const onStoryScroll = useCallback(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    const max = el.scrollHeight - el.clientHeight
+    sceneRef.current?.style.setProperty('--p', String(max > 0 ? el.scrollTop / max : 0))
+  }, [])
+
+  useEffect(() => {
+    if (!isStory) {
+      sceneRef.current?.style.setProperty('--p', '0') // leaving: everything glides back
+      return
+    }
+    scrollerRef.current?.scrollTo(0, 0)
+    scrollerRef.current?.focus({ preventScroll: true }) // so arrow keys / space scroll it
+  }, [isStory])
 
   if (view === 'planner')
     return (
@@ -61,7 +97,18 @@ function App() {
     )
 
   return (
-    <main className={`scene${animating ? ' is-animating' : ''}`} data-view={view}>
+    <main
+      className={`scene${animating ? ' is-animating' : ''}`}
+      data-view={view}
+      ref={sceneRef}
+    >
+      {/* Our story's patterned background: fades in behind the shrinking painting. */}
+      <div
+        className="story-bg"
+        aria-hidden="true"
+        style={{ backgroundImage: `url("${storyAsset('background.svg')}")` }}
+      />
+
       {/* The painting: covers the screen on the landing, then shrinks into
           the picture frame of the "our story" page. */}
       <div
@@ -93,6 +140,19 @@ function App() {
         />
       </footer>
 
+      {/* Our story's scroller: transparent, over the pictures, only there to be scrolled. */}
+      {isStory && (
+        <div
+          className="story-scroll"
+          ref={scrollerRef}
+          onScroll={onStoryScroll}
+          tabIndex={-1}
+          aria-hidden="true"
+        >
+          <div className="story-scroll-track" />
+        </div>
+      )}
+
       {/* ---------- Our story ---------- */}
       <section
         className="story-stage"
@@ -107,6 +167,25 @@ function App() {
         />
         <img className="story-heart" src={storyAsset('heart.svg')} alt="" />
         <img className="story-doodle" src={storyAsset('doodle.svg')} alt="" />
+
+        {/* Page 2: the team. Enters from the right while page 1 leaves to the left. */}
+        <div className="team-page">
+          <div className="team-stage">
+            <h2 className="team-title">
+              <img src={storyAsset('the_team.svg')} alt="The team" />
+            </h2>
+            <img className="team-box" src={storyAsset('box.svg')} alt="" />
+            <ul className="team-list">
+              {TEAM.map((m, i) => (
+                <li key={m.file} className={`team-card team-card--${i + 1}`}>
+                  <img src={storyAsset(m.file)} alt={m.alt} />
+                </li>
+              ))}
+            </ul>
+            <img className="team-sign" src={storyAsset('los_carbones_remix.svg')} alt="Los carbones remix" />
+          </div>
+        </div>
+
         <a className="back-btn" href="#">
           <img src={homeImg} alt="home" />
         </a>
