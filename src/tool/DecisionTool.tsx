@@ -16,7 +16,7 @@ import {
   type Slots,
 } from '../engine'
 import type { PlanKey } from '../agent/toolDefs'
-import type { AgentContext, GroundContext, YourPlan } from '../agent/toolHandlers'
+import type { AgentContext, YourPlan } from '../agent/toolHandlers'
 import { useProfile } from '../profile/ProfileContext'
 import { ProfileButton, ProfilePanel } from '../profile/ProfilePanel'
 import { PlanSaveBar } from '../profile/PlanSaveBar'
@@ -25,10 +25,14 @@ import type { SavedStrategy } from '../profile/types'
 import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { BrandLogo, HomeButton } from './Brand'
 import { ClimatePanel } from './ClimatePanel'
-import { GroundPanel } from './GroundPanel'
 import { ComparisonTable } from './ComparisonTable'
 import { FieldPanel, PriorityPanel, RotationEditor, ScenarioPanel } from './Controls'
 import { FieldFromSpace } from './FieldFromSpace'
+import { NODE_SITE } from '../engine/ground'
+import { FieldEvidence } from './FieldEvidence'
+import { GroundStrip } from './GroundStrip'
+import { LiveFeed } from './LiveFeed'
+import { useGround } from './useGround'
 import { fmt } from './format'
 import type { Frame } from './landsatFrames'
 import { PLAIN_TITLE, plainStats } from './plans'
@@ -340,7 +344,9 @@ export default function DecisionTool(props: {
   const yoursStale = selected?.key === 'yours' && (!mine || mine.input !== input)
 
   // The planning agent reads the latest results through this ref (tools run against the engine).
-  const [ground, setGround] = useState<GroundContext | null>(null)
+  const ground = useGround()
+  // The field node's probe is in a basil pot: show its data only when basil is part of the plan.
+  const showGround = [...current, ...(selected?.slots ?? [])].includes(NODE_SITE.cropId)
   const agentContext = useRef<AgentContext | null>(null)
   useEffect(() => {
     agentContext.current = result
@@ -350,6 +356,7 @@ export default function DecisionTool(props: {
           evaluate,
           viewing: selected?.key ?? 'best',
           yours,
+          ground: showGround ? { summary: ground.g, label: ground.label, capacity: ground.capacity } : null,
           applyPlan: (plan) => {
             setYours(plan)
             setSelectedKey('yours')
@@ -364,10 +371,9 @@ export default function DecisionTool(props: {
           remember: async (fact) => {
             await farm.addMemory(fact, 'helper')
           },
-          ground,
         }
       : null
-  }, [result, input, evaluate, terrain, selected?.key, yours, farm, ground])
+  }, [result, input, evaluate, terrain, selected?.key, yours, farm, showGround, ground.g, ground.label, ground.capacity])
   const getAgentContext = useCallback(() => agentContext.current, [])
 
   /** Snapshot of the plan on the card for saving or the PDF (null while it is being recomputed). */
@@ -488,6 +494,8 @@ export default function DecisionTool(props: {
                 </div>
               </div>
             )}
+            {showGround && <GroundStrip result={result} ground={ground} />}
+            {showGround && <LiveFeed capacity={ground.capacity} />}
             <button type="button" className="btn details-btn" onClick={() => (showDetails ? setShowDetails(false) : openDetails())} aria-expanded={showDetails}>
               {showDetails ? 'Hide the details' : 'See all the details'}
             </button>
@@ -529,7 +537,7 @@ export default function DecisionTool(props: {
               {terrain ? ` · slope ${fmt(field.slopePct, 1)}% and elevation ${fmt(field.elevationM)} m from NASA SRTM` : ''}
             </p>
             <ClimatePanel result={result} />
-            <GroundPanel result={result} onChange={setGround} />
+            {showGround && <FieldEvidence result={result} field={field} />}
             <FieldFromSpace frames={frames} />
             <RotationCalendar strategies={result.strategies} features={result.features} />
             <ComparisonTable strategies={result.strategies} weights={weights} />
