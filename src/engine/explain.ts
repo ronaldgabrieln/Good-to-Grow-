@@ -33,7 +33,10 @@ interface Delta {
   key: PriorityKey
   text: string
   better: boolean
+  /** Ranking weight (soil carbon is capped at 100 so a tiny base can't dominate). */
   magnitude: number
+  /** Headline wording when the magnitude alone would mislead. */
+  short?: string
 }
 
 function deltas(m: RotationMetrics, base: RotationMetrics): Delta[] {
@@ -52,12 +55,23 @@ function deltas(m: RotationMetrics, base: RotationMetrics): Delta[] {
     magnitude: Math.abs(incDiff),
     text: `Relative income index ${incDiff >= 0 ? '+' : ''}${fmt(incDiff)}% (${fmt(m.income, 1)} vs ${fmt(base.income, 1)} per year)`,
   })
+  // Soil carbon input = residue x 0.45 x 0.15, so low-residue crops (vegetables, herbs) give a tiny base and a
+  // percentage change explodes (+300-700 %). Say it in tonnes, and as "N x" when it more than doubles.
   const cDiff = pct(m.soilCarbon, base.soilCarbon)
+  const cAbs = m.soilCarbon - base.soilCarbon
+  const cRatio = base.soilCarbon > 0 ? m.soilCarbon / base.soilCarbon : Infinity
+  const cWords =
+    Math.abs(cDiff) <= 100 || !Number.isFinite(cRatio)
+      ? `${cDiff >= 0 ? '+' : ''}${fmt(cDiff)}%`
+      : cRatio > 1
+        ? `${fmt(cRatio, 1)}× as much`
+        : `${fmt(1 / cRatio, 1)}× less`
   out.push({
     key: 'soil',
     better: cDiff > 0,
-    magnitude: Math.abs(cDiff),
-    text: `Returns ${fmt(m.residueT, 1)} t/ha/yr of residue vs ${fmt(base.residueT, 1)} (${cDiff >= 0 ? '+' : ''}${fmt(cDiff)}% soil carbon input)`,
+    magnitude: Math.min(100, Math.abs(cDiff)),
+    short: Math.abs(cDiff) <= 100 || !Number.isFinite(cRatio) ? undefined : `${fmt(cRatio, 1)}× the soil carbon`,
+    text: `Returns ${fmt(m.residueT, 1)} t/ha/yr of residue vs ${fmt(base.residueT, 1)}: ${cAbs >= 0 ? '+' : '−'}${fmt(Math.abs(cAbs), 2)} t C/ha/yr of soil carbon input (${cWords})`,
   })
   const nDiff = base.nitrogenKg - m.nitrogenKg
   out.push({
@@ -248,7 +262,7 @@ export function buildCard(x: CardInput): StrategyCard {
             case 'income':
               return `${fmt(d.magnitude)}% more income`
             case 'soil':
-              return `${fmt(d.magnitude)}% more soil carbon`
+              return d.short ?? `${fmt(d.magnitude)}% more soil carbon`
             case 'nitrogen':
               return `${fmt(d.magnitude)}% less N fertilizer`
             case 'erosion':

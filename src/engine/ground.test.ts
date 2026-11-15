@@ -1,9 +1,31 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { fitDrainage, parseNodeCsv, pctOfCapacity, summarizeGround } from './ground'
+import { daylightEtShare, fitDrainage, parseNodeCsv, pctOfCapacity, summarizeGround } from './ground'
 
 const csv = readFileSync(path.join(__dirname, '..', '..', 'public', 'data', 'ground', 'node-2026-11-15.csv'), 'utf8')
+
+describe('daylight share of ET', () => {
+  const day = (h: number, m = 0) => Date.UTC(2026, 10, 15, h, m)
+  it('is 0 at night, 1 over a whole day and about a quarter for 10:10-11:50 in Ensenada', () => {
+    expect(daylightEtShare(day(0, 32), day(7, 25), 31.87, -116.6)).toBeLessThan(0.02)
+    expect(daylightEtShare(day(0), day(24), 31.87, -116.6)).toBeCloseTo(1, 6)
+    const s = daylightEtShare(day(10, 10), day(11, 50), 31.87, -116.6)
+    expect(s).toBeGreaterThan(0.2)
+    expect(s).toBeLessThan(0.3)
+  })
+})
+
+describe('sun run of 15 Nov 2026', () => {
+  const sun = readFileSync(path.join(__dirname, '..', '..', 'public', 'data', 'ground', 'node-2026-11-15-sun.csv'), 'utf8')
+  it('parses the re-timed sun run and finds no drying beyond the scatter', () => {
+    const g = summarizeGround(parseNodeCsv(sun))!
+    expect(g.n).toBe(26)
+    expect(g.fit).toBeNull()
+    expect(g.trend!.sdRaw).toBeGreaterThan(5)
+    expect(Math.abs(g.trend!.slopePerH)).toBeLessThan(2 * g.trend!.sePerH)
+  })
+})
 
 describe('field node ground truth', () => {
   it('parses the live recorder CSV (empty temperature, PC time)', () => {
