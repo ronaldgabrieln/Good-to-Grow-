@@ -39,6 +39,13 @@ A chat drawer on the results screen where the farmer talks through their options
 
 **Limits:** it needs internet and a key, and costs per question (2–5 API calls; the server logs token use per call). It only knows what the engine knows (coarse NASA grid, modeled soil, placeholder income index, no sensors yet). The conversation is lost on refresh and there's a single user. The number check verifies figures, not every sentence. The server has no auth, so run it locally only.
 
+## Deploying on Vercel
+
+- Framework preset **Vite** (build `npm run build`, output `dist`). The helper's endpoint is the serverless function [api/agent.ts](api/agent.ts), which runs the same handler as the local dev server ([server/agentHandler.ts](server/agentHandler.ts)); [vercel.json](vercel.json) gives it up to 60 s per call.
+- Environment variables: `ANTHROPIC_API_KEY` (server only), `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. The `VITE_` ones are baked in at build time, so **redeploy after changing them**, and set them for Preview too if you use preview deployments.
+- The endpoint has no login: anyone with the site URL can use the helper on your key. Set a monthly spend limit on the key in the Anthropic Console.
+- Relative imports on the function's path (`api/` → `server/agentHandler.ts` → `src/agent/toolDefs.ts` → `src/engine/crops.ts`) end in `.js`, because Vercel runs the function as plain Node ESM. Keep it that way if you add imports there.
+
 ## Farmer profiles: saved plans, helper memory, PDF
 
 No server of our own: the browser talks to Supabase directly with the public anon key.

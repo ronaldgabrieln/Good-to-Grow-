@@ -1,0 +1,24 @@
+Outdoor run, 2026-11-15 (in the sun, on the power bank)
+- Plugged into the power bank at 10:10 (local time, reported by the team).
+- Nano log cleared and clock set at 09:51:59 on the PC; then unplugged and moved to the power bank.
+- Logs every 4 min (126 rows max = 8.4 h, so collect before about 18:30).
+- DHT11 on A4 did not answer on the 09:52 test (no reply to the start signal): expect no temperature.
+- Re-time on download: rows after the last boot marker = 10:10 + since_boot_s.
+
+Probe site (reported by the team, applies to the night run of 14-15 Nov and this run):
+- Basil (albahaca) in a terracotta pot with drainage holes, about 25 cm across and 22 cm of soil
+  (surface 0.049 m2, so 49 mL of water = 1 mm; about 10.8 L of soil as a cylinder, a bit less if tapered).
+- Soil: potting mix blended with garden soil (not Maneadero field soil).
+- Place: Ensenada city (NASA POWER cell at 31.87, -116.60, cell elevation 220 m), not the Maneadero field cell.
+- The drained level is the pot's container capacity, not field capacity. Terracotta also evaporates through its walls.
+- Best check: weigh the whole pot before and after (1 g lost = 1 mL of water).
+
+Result (downloaded 11:54, analysis/sun_run.py):
+- Outdoor run = 10:10-11:50 (26 rows, 4 min), re-timed from the boot marker -> field-data/sun-2026-11-15.csv
+  (also bundled in the app as public/data/ground/node-2026-11-15-sun.csv). Raw dump: eeprom-2026-11-15-sun-raw.csv.
+- First reading 704 (probe just pushed in / watered), then 628-660, mean 650.
+- Trend -1.4 +/- 8.0 raw/h (95%), scatter 9.6 raw: no drying distinguishable from zero.
+- Expected from NASA (Nov ET0 2.6 mm/day, 24% of it in this window, basil Kc 1.0): 0.63 mm = 31 mL from the pot,
+  about 4-6 raw spread through 10.8 L of soil -> smaller than the scatter. Run too short to see sun drying.
+- Morning rise +20 raw (10:14-10:38) is most likely the sun warming the probe (~2 %/C), not water.
+- Firmware updated after this run: each logged row is now the mean of all live readings since the last row.

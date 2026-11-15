@@ -118,6 +118,11 @@ export interface GroundSummary {
   /** One-minute means, for charting. */
   series: { t: number; raw: number }[]
   fit: DrainageFit | null
+  /**
+   * Straight-line trend after the peak (for runs too short or too flat for a drainage curve, such as a
+   * daytime run): slope with its standard error and the scatter of the readings around the line.
+   */
+  trend: { slopePerH: number; sePerH: number; sdRaw: number; n: number } | null
   temp: { min: number; max: number; n: number } | null
   rh: { min: number; max: number; n: number } | null
 }
@@ -304,10 +309,68 @@ export function summarizeGround(readings: GroundReading[]): GroundSummary | null
     hourly,
     series,
     fit: fitDrainage(series.slice(peakIdx)),
+    trend: linearTrend(series.slice(peakIdx + 1)),
     temp: stats(readings.map((r) => r.tempC)),
     rh: stats(readings.map((r) => r.rhPct)),
   }
 }
 
 /** Formats a local-time ms value (from parseLocal) as "HH:MM". */
+function linearTrend(pts: { t: number; raw: number }[]): GroundSummary['trend'] {
+  const n = pts.length
+  if (n < 5) return null
+  const xs = pts.map((p) => (p.t - pts[0].t) / 3.6e6)
+  const mx = xs.reduce((a, b) => a + b, 0) / n
+  const my = pts.reduce((a, p) => a + p.raw, 0) / n
+  let sxx = 0, sxy = 0
+  for (let i = 0; i < n; i++) {
+    sxx += (xs[i] - mx) ** 2
+    sxy += (xs[i] - mx) * (pts[i].raw - my)
+  }
+  if (sxx === 0) return null
+  const slope = sxy / sxx
+  let sse = 0
+  for (let i = 0; i < n; i++) sse += (pts[i].raw - (my + slope * (xs[i] - mx))) ** 2
+  const sd = Math.sqrt(sse / (n - 2))
+  return { slopePerH: slope, sePerH: sd / Math.sqrt(sxx), sdRaw: sd, n }
+}
+
+/**
+ * Share of a day's reference ET that falls between two local clock times, assuming ET follows the sun:
+ * a half-sine between sunrise and sunset. Day length from FAO-56 (eq. 25 and 34); solar noon from the
+ * longitude and the time-zone meridian (Ensenada: UTC−8, meridian −120°). Times are local ms (see parseLocal).
+ */
+export function daylightEtShare(startMs: number, endMs: number, latDeg: number, lonDeg: number, zoneMeridianDeg = -120): number {
+  const d0 = new Date(startMs)
+  const doy = Math.floor((Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate()) - Date.UTC(d0.getUTCFullYear(), 0, 1)) / 864e5) + 1
+  const phi = (latDeg * Math.PI) / 180
+  const delta = 0.409 * Math.sin((2 * Math.PI * doy) / 365 - 1.39)
+  const ws = Math.acos(Math.max(-1, Math.min(1, -Math.tan(phi) * Math.tan(delta))))
+  const dayH = (24 / Math.PI) * ws
+  const noon = 12 - (lonDeg - zoneMeridianDeg) / 15
+  const rise = noon - dayH / 2
+  const done = (h: number) => (h <= rise ? 0 : h >= rise + dayH ? 1 : (1 - Math.cos((Math.PI * (h - rise)) / dayH)) / 2)
+  const dayStart = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate())
+  // Sum day by day so runs that cross midnight work too.
+  let share = 0
+  for (let day = dayStart; day < endMs; day += 864e5) {
+    const a = Math.max(startMs, day)
+    const b = Math.min(endMs, day + 864e5)
+    if (b > a) share += done((b - day) / 3.6e6) - done((a - day) / 3.6e6)
+  }
+  return share
+}
+
 export const clock = (ms: number) => new Date(ms).toISOString().slice(11, 16)
+
+/**
+ * NASA check of the night run (analysis/verify_de.py, section 9): FAO-56 hourly ET0 (eq. 53) from NASA POWER
+ * hourly weather for the Ensenada cell, 00:30–07:30 on the nearest published nights (10–12 Nov 2026).
+ */
+export const NASA_NIGHT_ET0 = {
+  maxMm: 0.15,
+  source: 'NASA POWER hourly (Ensenada cell), nights of 10–12 Nov 2026, FAO-56 hourly ET₀',
+}
+
+/** Typical container capacity of a potting-mix + garden-soil blend, m³/m³ (assumed until the probe is calibrated). */
+export const POT_CAPACITY_RANGE = [0.35, 0.5] as const

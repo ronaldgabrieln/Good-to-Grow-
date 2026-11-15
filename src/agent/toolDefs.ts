@@ -3,7 +3,7 @@
 // Schemas are strict: every property required, no extra properties, crops limited to known ids.
 
 import type Anthropic from '@anthropic-ai/sdk'
-import { CROPS } from '../engine/crops'
+import { CROPS } from '../engine/crops.js' // .js: also loaded by the Vercel function as plain Node ESM
 
 export const CROP_IDS = CROPS.map((c) => c.id)
 export const SLOT_VALUES = [...CROP_IDS, 'none']

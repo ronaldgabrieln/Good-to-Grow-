@@ -10,6 +10,15 @@
 .profile-btn:focus-visible { outline: 3px dashed var(--accent); outline-offset: 2px; }
 .profile-avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-size: 14px; }
 .tool-bar .profile-btn + .bar-change { margin-left: 10px; }
+/* Signed-out "sign in" paper button: first of the three papers, so it takes the auto margin.
+   Its paper fills 95.2% of the image height (home.svg: 98.1%), so it is drawn a bit taller. */
+/* (.home-btn.bar-signin: tool.css loads after this file, so its .home-btn rules need outranking) */
+.tool-bar .home-btn.bar-signin { margin-left: auto; }
+.tool-bar .bar-signin + .home-btn.bar-change { margin-left: 4px; } /* same gap as change → home */
+.tool-bar .home-btn.bar-signin img { height: calc(46px * 0.981 / 0.952); }
+@media (max-width: 860px) {
+  .tool-bar .home-btn.bar-signin img { height: calc(38px * 0.981 / 0.952); }
+}
 
 .profile-panel.agent { left: 0; right: auto; z-index: 41; }
 .profile-body h3 { margin: 0 0 4px; font-size: 16px; }

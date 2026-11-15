@@ -5,7 +5,7 @@
   What it does
   - Prints a live reading every LIVE_INTERVAL_S over USB:  T:23.0 RH:55 Soil:41
     (Tools > Serial Plotter draws it as a live chart; Serial Monitor shows the numbers.)
-  - Logs one reading every LOG_INTERVAL_MIN into the Nano's built-in EEPROM.
+  - Logs the mean of the live readings every LOG_INTERVAL_MIN into the Nano's built-in EEPROM.
     126 readings fit (about 10 h at 5 min). Data survives power loss; when full, the oldest
     reading is overwritten.
   - Commands: open Serial Monitor at 9600 baud, line ending "Newline", type:
@@ -86,6 +86,10 @@ DHT dht(DHT_PIN, DHT_TYPE);
 
 bool liveOn = true;
 unsigned long lastLiveMs = 0, lastLogMs = 0;
+// Running sums of the live readings between two logged rows (logged value = their mean).
+long accSoil = 0;
+uint16_t accN = 0, accTN = 0, accHN = 0;
+float accT = 0, accH = 0;
 float tMin = NAN, tMax = NAN;
 char line[32];
 uint8_t lineLen = 0;
@@ -313,9 +317,15 @@ void loop() {
       Serial.print(F(" Raw:")); Serial.print(raw);  // keeps the signal even when % is pinned at 0 or 100
       Serial.println();
     }
+    // Each logged row is the MEAN of every live reading since the last row (48 readings at 5 s / 4 min),
+    // not one instant: the sun run of 15 Nov showed ~10 raw of scatter between single readings.
+    accSoil += raw; accN++;
+    if (!isnan(t)) { accT += t; accTN++; }
+    if (!isnan(h)) { accH += h; accHN++; }
     if (ms - lastLogMs >= LOG_INTERVAL_MIN * 60000UL) {
       lastLogMs = ms;
-      logReading(t, h, raw);
+      logReading(accTN ? accT / accTN : NAN, accHN ? accH / accHN : NAN, (int)lround((float)accSoil / accN));
+      accSoil = 0; accN = 0; accT = 0; accTN = 0; accH = 0; accHN = 0;
     }
   }
 }

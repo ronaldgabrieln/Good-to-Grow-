@@ -17,6 +17,8 @@ import {
   type Strategy,
 } from '../engine'
 import { doyToLabel } from '../engine/features'
+import { capacityName, daylightEtShare, describeSite, mlPerMm, NODE_SITE, pctOfCapacity, siteAreaM2, siteVolumeL, type GroundSummary, type SoilCapacity } from '../engine/ground'
+import type { SavedStrategy } from '../profile/types'
 import { CROP_IDS, LAYERS, PLAN_KEYS, SLOT_VALUES, type OptionKey, type PlanKey } from './toolDefs'
 
 /** The farmer's own plan, made by allowing a change the helper proposed. */
@@ -51,8 +53,28 @@ export interface AgentContext {
   yours: YourPlan | null
   /** Make the rotation the farmer's plan ("yours") and show it. Only called after the farmer allows it. */
   applyPlan: (plan: YourPlan) => void
+  /** Readings from the farmer's field sensor node, if loaded, and where they came from. */
+  ground?: { summary: GroundSummary | null; label: string; capacity: SoilCapacity | null } | null
   /** Shows a proposal in the chat and resolves with the farmer's decision (set by the agent loop). */
   requestApproval?: (p: Proposal) => Promise<boolean>
+  /** The signed-in farmer's profile (Supabase), or null/absent when nobody is signed in. */
+  farmer?: FarmerMemory | null
+  /** Save a fact to the farmer's memory. Only called after the farmer allows it. */
+  remember?: (fact: string) => Promise<void>
+  /** Shows a memory proposal in the chat and resolves with the farmer's decision (set by the agent loop). */
+  requestMemoryApproval?: (m: MemoryProposal) => Promise<boolean>
+}
+
+export interface FarmerMemory {
+  username: string
+  memories: { fact: string; created_at: string }[]
+  strategies: SavedStrategy[]
+}
+
+/** A fact the helper wants to remember; the farmer allows or denies it in the chat. */
+export interface MemoryProposal {
+  id: string
+  fact: string
 }
 
 export interface ToolOutput {
@@ -73,6 +95,7 @@ const Target = z.object({ option: Option, slots: z.array(Slot) }).strict()
 const SCHEMAS = {
   get_field_overview: z.object({}).strict(),
   get_options: z.object({}).strict(),
+  get_ground_readings: z.object({}).strict(),
   evaluate_rotation: z.object({ slots: z.array(Slot) }).strict(),
   compare_rotations: z.object({ a: Target, b: Target }).strict(),
   test_climate: z.object({ target: Target, warmer_c: z.number(), rain_change_pct: z.number() }).strict(),
@@ -80,6 +103,8 @@ const SCHEMAS = {
   season_plan: z.object({ target: Target }).strict(),
   show_on_land: z.object({ option: z.enum(PLAN_KEYS), layer: z.enum(LAYERS) }).strict(),
   propose_change: z.object({ base: z.enum(PLAN_KEYS), slots: z.array(Slot), reason: z.string().max(400) }).strict(),
+  recall_farmer: z.object({}).strict(),
+  propose_memory: z.object({ fact: z.string().trim().min(3).max(200) }).strict(),
 }
 type ToolName = keyof typeof SCHEMAS
 
@@ -128,6 +153,8 @@ function changes(m: RotationMetrics, base: RotationMetrics) {
     irrigation_change_m3_per_hectare_per_year: r((m.waterMm - base.waterMm) * 10),
     income_index_change_pct: pctChange(m.income, base.income),
     soil_carbon_input_change_pct: pctChange(m.soilCarbon, base.soilCarbon),
+    soil_carbon_input_change_t_c_per_hectare_per_year: r(m.soilCarbon - base.soilCarbon, 2),
+    soil_carbon_note: 'Soil carbon input comes from crop residue; low-residue crops make a tiny base, so prefer the t C/ha/yr change over a large percentage.',
     nitrogen_fertilizer_change_kg_per_hectare_per_year: r(m.nitrogenKg - base.nitrogenKg),
     nitrogen_fertilizer_change_pct: pctChange(m.nitrogenKg, base.nitrogenKg),
     soil_loss_change_pct: pctChange(m.erosionT, base.erosionT),
@@ -259,6 +286,105 @@ async function getFieldOverview(ctx: AgentContext) {
     },
     summary: "Read your field's data",
     sources: [SOURCES.power, SOURCES.soilgrids],
+  }
+}
+
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+const isoLocal = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ')
+
+async function getGroundReadings(ctx: AgentContext) {
+  const g = ctx.ground?.summary
+  if (!g) {
+    return {
+      out: { available: false, note: 'No field sensor readings are loaded. The farmer can load a node CSV from the "Measured on your field" box on the main screen.' },
+      summary: 'Looked for your field sensor readings',
+      sources: [],
+    }
+  }
+  const month = new Date(g.startMs).getUTCMonth()
+  const fit = g.fit
+  const cap = ctx.ground?.capacity ?? { raw: g.peakRaw, ms: g.peakMs, label: ctx.ground?.label ?? '' }
+  const wetPct = (raw: number) => r(pctOfCapacity(raw, cap.raw))
+  const site = NODE_SITE
+  const capName = capacityName(site)
+  const state = !fit
+    ? 'unknown: the readings did not follow a drainage curve'
+    : g.rawEnd > fit.fcRaw + 10
+      ? `wet and still draining toward ${capName}`
+      : g.rawEnd >= fit.fcRaw - 10
+        ? `at ${capName} (the soil holds as much water as it can after draining)`
+        : `below ${capName}: roots are using stored water`
+  return {
+    out: {
+      available: true,
+      recording: ctx.ground?.label,
+      probe_location: {
+        description: describeSite(site, CROP_BY_ID[site.cropId]?.name ?? 'Basil'),
+        kind: site.kind,
+        crop: site.cropId,
+        soil: site.soil,
+        place: site.place,
+        pot_top_diameter_cm: site.container?.topDiameterCm ?? null,
+        pot_soil_depth_cm: site.container?.soilDepthCm ?? null,
+        pot_material: site.container?.material ?? null,
+        pot_surface_m2: site.container ? r(siteAreaM2(site), 3) : null,
+        pot_soil_volume_litres: site.container ? r(siteVolumeL(site), 1) : null,
+        millilitres_per_mm_of_water_over_the_pot: site.container ? r(mlPerMm(site)) : null,
+        notes: site.notes,
+      },
+      from_local_time: isoLocal(g.startMs),
+      to_local_time: isoLocal(g.endMs),
+      hours_recorded: r(g.hours, 1),
+      readings: g.n,
+      soil_state_now: state,
+      highest_peak_recorded_in: cap.label,
+      highest_peak_local_time: isoLocal(cap.ms),
+      soil_water_at_this_recordings_peak_pct_of_highest_peak: wetPct(g.peakRaw),
+      this_recordings_peak_local_time: isoLocal(g.peakMs),
+      soil_water_now_pct_of_highest_peak: wetPct(g.rawEnd),
+      hours_since_this_recordings_peak: r((g.endMs - g.peakMs) / 3.6e6, 1),
+      drying_last_hour_pct_of_highest_peak_per_hour: r(pctOfCapacity(cap.raw + g.lastHourRatePerH, cap.raw) - 100, 1),
+      capacity_name: capName,
+      ...(() => {
+        const share = daylightEtShare(g.peakMs, g.endMs, site.lat, site.lon)
+        const et0Day = ctx.result.features.monthly[month].et0MeanMm / DAYS_IN_MONTH[month]
+        const kc = CROP_BY_ID[site.cropId]?.kc[1] ?? 1
+        const tr = g.trend
+        const toPct = (raw: number) => (raw / cap.raw) * 100
+        return {
+          recorded_at_night: share < 0.03,
+          share_of_the_days_evaporation_in_this_recording_pct: r(share * 100),
+          expected_evaporation_in_this_recording_mm: r(et0Day * share * kc, 2),
+          expected_evaporation_from_the_pot_millilitres: site.container ? r(et0Day * share * kc * mlPerMm(site)) : null,
+          trend_pct_of_highest_peak_per_hour: tr ? r(toPct(tr.slopePerH), 1) : null,
+          trend_uncertainty_95pct_pct_per_hour: tr ? r(toPct(2 * tr.sePerH), 1) : null,
+          scatter_between_readings_pct_of_highest_peak: tr ? r(toPct(tr.sdRaw), 1) : null,
+          drying_detectable: tr ? Math.abs(tr.slopePerH) > 2 * tr.sePerH : null,
+        }
+      })(),
+      field_capacity_pct_of_highest_peak: fit ? wetPct(fit.fcRaw) : null,
+      field_capacity_confirmed: fit ? fit.settled : false,
+      drainage_time_constant_hours: fit ? r(fit.tauH, 1) : null,
+      nasa_power_reference_et_mm_per_day_this_month: r(ctx.result.features.monthly[month].et0MeanMm / DAYS_IN_MONTH[month], 1),
+      temperature_measured: g.temp !== null,
+      humidity_measured: g.rh !== null,
+      meaning: [
+        'Soil water is given as % of the highest peak: 100% is the wettest the probe has read, right after a watering, and 0% is the probe in dry air. If the farmer waters again and it reads higher, that becomes the new 100%. These are relative readings, not a volumetric water content.',
+        'Night readings fall mostly because water drains deeper, not because it evaporates: the sun drives almost all of the daily crop water demand.',
+        `Where the drainage curve levels off is this soil at ${capName}, the "full bucket" after a good watering. Readings below it mean roots are using stored water.`,
+        ...(site.kind === 'pot'
+          ? ['The probe is in a pot, not in the farm field: its numbers describe the pot (container capacity, a pot that also loses water through terracotta walls), so do not present them as the field soil. They show how the method works and how basil uses water.']
+          : []),
+        'In daylight, warm soil makes this probe read higher (about 2% per degree C), so a midday rise is probably heat, not added water. If drying_detectable is false, the run was too short for the sun to dry the pot more than the reading scatter.',
+        'These readings are shown next to the model and do not change the plans, which come from 30 years of NASA weather. One recording is too short to correct the 30-year replay.',
+      ],
+      not_measured: [
+        ...(g.temp ? [] : ['temperature (the node has no temperature sensor yet; adding one would let frost risk be checked against the field)']),
+        ...(g.rh ? [] : ['air humidity']),
+      ],
+    },
+    summary: 'Read your field sensor readings',
+    sources: ['GoodToGrow field sensor node (soil moisture probe)', SOURCES.power],
   }
 }
 
@@ -477,6 +603,67 @@ async function proposeChange(ctx: AgentContext, baseKey: PlanKey, slotsRaw: stri
   }
 }
 
+const savedOn = (iso: string) => iso.slice(0, 10)
+
+async function recallFarmer(ctx: AgentContext) {
+  const f = ctx.farmer
+  if (!f) {
+    return {
+      out: { signed_in: false, note: 'Nobody is signed in, so nothing is remembered and no plans are saved. The farmer can sign in with a username at the top of the screen to save plans and let you remember facts.' },
+      summary: 'Checked your profile: not signed in',
+      sources: [],
+    }
+  }
+  return {
+    out: {
+      signed_in: true,
+      username: f.username,
+      remembered_facts: f.memories.map((m) => ({ fact: m.fact, saved_on: savedOn(m.created_at) })),
+      saved_plans: f.strategies.slice(0, 10).map((s) => {
+        const p = s.payload
+        return {
+          title: s.title,
+          saved_on: savedOn(s.created_at),
+          place: s.field_name,
+          latitude: r(s.lat, 3),
+          longitude: r(s.lon, 3),
+          plan: p.plan.title,
+          rotation: p.plan.label,
+          seasons: seasons(p.plan.slots),
+          figures_when_saved: figures(p.plan.metrics),
+          change_versus_current_rotation_when_saved: p.plan.baseMetrics ? changes(p.plan.metrics, p.plan.baseMetrics) : null,
+          climate_test_when_saved: p.scenario.deltaTempC || p.scenario.rainChange ? { warmer_c: p.scenario.deltaTempC, rain_change_pct: r(p.scenario.rainChange * 100) } : null,
+        }
+      }),
+      note:
+        'Remembered facts were stated by the farmer and kept with their permission: treat them as the farmer’s own information, not as results of this analysis, and say so when you use them. Saved plans were computed when saved (same engine), possibly for another field or before data changed; use the tools for current figures. ' + INCOME_NOTE,
+    },
+    summary: `Checked what I remember about you (${f.memories.length} notes, ${f.strategies.length} saved plans)`,
+    sources: ['Your saved profile'],
+  }
+}
+
+async function proposeMemory(ctx: AgentContext, fact: string) {
+  if (!ctx.farmer) throw new ToolInputError('Nobody is signed in, so nothing can be remembered. Tell the farmer they can sign in with a username at the top of the screen.')
+  if (!ctx.requestMemoryApproval || !ctx.remember) throw new ToolInputError('Memory cannot be changed right now.')
+  const clean = fact.trim().replace(/\s+/g, ' ')
+  if (ctx.farmer.memories.some((m) => m.fact.toLowerCase() === clean.toLowerCase())) throw new ToolInputError('This is already remembered.')
+  const allowed = await ctx.requestMemoryApproval({ id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, fact: clean })
+  if (!allowed) {
+    return {
+      out: { decision: 'denied', note: 'The farmer said no. Nothing was saved. Do not ask to remember this again.' },
+      summary: 'Asked to remember something: you said no',
+      sources: [],
+    }
+  }
+  await ctx.remember(clean)
+  return {
+    out: { decision: 'allowed', remembered: clean },
+    summary: 'Remembered a note about your farm: you allowed it',
+    sources: ['Your saved profile'],
+  }
+}
+
 /** Run one tool call. Never throws: errors come back as an is_error result the model can read. */
 export async function runTool(name: string, rawInput: unknown, ctx: AgentContext): Promise<ToolOutput> {
   try {
@@ -488,6 +675,9 @@ export async function runTool(name: string, rawInput: unknown, ctx: AgentContext
     switch (name as ToolName) {
       case 'get_field_overview':
         res = await getFieldOverview(ctx)
+        break
+      case 'get_ground_readings':
+        res = await getGroundReadings(ctx)
         break
       case 'get_options':
         res = await getOptions(ctx)
@@ -523,6 +713,12 @@ export async function runTool(name: string, rawInput: unknown, ctx: AgentContext
         res = await proposeChange(ctx, x.base, x.slots, x.reason)
         break
       }
+      case 'recall_farmer':
+        res = await recallFarmer(ctx)
+        break
+      case 'propose_memory':
+        res = await proposeMemory(ctx, (input as z.infer<typeof SCHEMAS.propose_memory>).fact)
+        break
     }
     return { content: JSON.stringify(res.out), isError: false, summary: res.summary, sources: res.sources }
   } catch (e) {
