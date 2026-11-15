@@ -1,25 +1,28 @@
 import { useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { CROP_BY_ID, type Slots } from '../engine'
+import centerText from '../assets/Hello (6).svg'
 
 /**
  * The 3-year plan as a ring: six pieces (Y1 spring, Y1 fall, … Y3 fall) going clockwise from the
- * top. Each year has its own color (spring dark, fall light); the two seasons of a year sit close
- * together and a wider gap separates the years. Bare seasons are gray. Hover lights a piece up,
+ * top. Each year is drawn as one arrow: it starts with a notch and ends with a point that fits into
+ * the next year's notch. Inside a year, spring and fall are split by a thin line. Every season has
+ * its own color, which its outside label shares. Bare seasons are gray. Hover lights a piece up,
  * click/tap shows a little more about it in the middle.
  */
 
 // Geometry in SVG user units, centered on (0, 0).
 const R_OUT = 150
-const R_IN = 100
-const CORNER = 9 // rounded corners: drawn as a stroke of this half-width with round joins
-const GAP_SAME_YEAR = 5
-const GAP_NEW_YEAR = 20
+const R_IN = 92
+const R_MID = (R_OUT + R_IN) / 2
+const GAP_NEW_YEAR = 8 // gap around each arrow point
+const GAP_SAME_YEAR = 2.5 // thin line between spring and fall
+const TIP = 20 // how far the arrow point reaches into the next year (along the middle of the ring)
 const VIEW = 250 // half-width of the viewBox, leaves room for the outside labels
 
-const YEAR_COLORS = [
-  { spring: '#2f6b36', fall: '#9bc088' }, // green
-  { spring: '#3e5181', fall: '#87a0c8' }, // blue
-  { spring: '#e2901c', fall: '#fcc36d' }, // orange
+const YEARS = [
+  { year: '#753646', spring: '#a0718d', fall: '#7b4e59' },
+  { year: '#9bbc74', spring: '#b8d793', fall: '#80a752' },
+  { year: '#6a99a3', spring: '#b4dce5', fall: '#82aeb7' },
 ]
 const BARE = '#d8d4c9'
 const KIND_LABEL = { cash: 'Cash crop', cover: 'Cover crop', forage: 'Forage' } as const
@@ -28,18 +31,34 @@ const short = (id: string) => CROP_BY_ID[id].name.replace(/ \(.*\)$/, '')
 const deg = (d: number) => (d * Math.PI) / 180
 /** Clockwise from the top. */
 const pt = (r: number, a: number) => [r * Math.sin(a), -r * Math.cos(a)] as const
+/** Angle that covers `d` units of arc at radius `r` (keeps gaps the same width across the ring). */
+const along = (d: number, r: number) => d / r
 
-function segmentPath(a0: number, a1: number, gapBefore: number, gapAfter: number) {
-  const ro = R_OUT - CORNER
-  const ri = R_IN + CORNER
-  // Offset each edge by a fixed distance so the gaps have parallel sides, like the reference.
-  const d0 = gapBefore / 2 + CORNER
-  const d1 = gapAfter / 2 + CORNER
-  const [x1, y1] = pt(ro, a0 + Math.asin(d0 / ro))
-  const [x2, y2] = pt(ro, a1 - Math.asin(d1 / ro))
-  const [x3, y3] = pt(ri, a1 - Math.asin(d1 / ri))
-  const [x4, y4] = pt(ri, a0 + Math.asin(d0 / ri))
-  return `M${x1} ${y1}A${ro} ${ro} 0 0 1 ${x2} ${y2}L${x3} ${y3}A${ri} ${ri} 0 0 0 ${x4} ${y4}Z`
+/** Light fills get navy crop names, dark fills white ones. */
+function isLight(hex: string) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) > 0.3
+}
+
+/**
+ * One piece of the ring between angles a0 and a1.
+ * notchStart: the piece starts a year, so its start edge is a notch (the previous arrow's point
+ * fits in it). tipEnd: the piece ends a year, so its end edge is an arrow point.
+ */
+function segmentPath(a0: number, a1: number, notchStart: boolean, tipEnd: boolean) {
+  const g0 = (notchStart ? GAP_NEW_YEAR : GAP_SAME_YEAR) / 2
+  const g1 = (tipEnd ? GAP_NEW_YEAR : GAP_SAME_YEAR) / 2
+  const [ox0, oy0] = pt(R_OUT, a0 + along(g0, R_OUT))
+  const [ox1, oy1] = pt(R_OUT, a1 - along(g1, R_OUT))
+  const [ix1, iy1] = pt(R_IN, a1 - along(g1, R_IN))
+  const [ix0, iy0] = pt(R_IN, a0 + along(g0, R_IN))
+  const end = tipEnd ? (() => { const [x, y] = pt(R_MID, a1 + along(TIP - g1, R_MID)); return `L${x} ${y}` })() : ''
+  const start = notchStart ? (() => { const [x, y] = pt(R_MID, a0 + along(TIP + g0, R_MID)); return `L${x} ${y}` })() : ''
+  return (
+    `M${ox0} ${oy0}A${R_OUT} ${R_OUT} 0 0 1 ${ox1} ${oy1}` +
+    `${end}L${ix1} ${iy1}A${R_IN} ${R_IN} 0 0 0 ${ix0} ${iy0}${start}Z`
+  )
 }
 
 /** Splits long crop names over two lines so they fit inside a piece. */
@@ -62,6 +81,7 @@ export function RotationRing(props: { slots: Slots; current?: Slots }) {
   const lit = hover ?? active
   const n = slots.length
   const step = 360 / n
+  const years = Math.ceil(n / 2)
 
   const toggle = (i: number) => setActive((a) => (a === i ? null : i))
   const onKey = (i: number) => (e: KeyboardEvent) => {
@@ -82,18 +102,18 @@ export function RotationRing(props: { slots: Slots; current?: Slots }) {
         {slots.map((id, i) => {
           const year = Math.floor(i / 2)
           const spring = i % 2 === 0
-          const colors = YEAR_COLORS[year % YEAR_COLORS.length]
-          const fill = id ? (spring ? colors.spring : colors.fall) : BARE
-          const darkFill = id && (spring ? year !== 2 : false)
+          const colors = YEARS[year % YEARS.length]
+          const seasonColor = spring ? colors.spring : colors.fall
+          const fill = id ? seasonColor : BARE
           const a0 = deg(i * step)
           const a1 = deg((i + 1) * step)
           const mid = (a0 + a1) / 2
-          const gapBefore = spring ? GAP_NEW_YEAR : GAP_SAME_YEAR
-          const gapAfter = spring ? GAP_SAME_YEAR : GAP_NEW_YEAR
+          const midDeg = (i + 0.5) * step
           const [nx, ny] = pt(1, mid)
-          const [tx, ty] = pt((R_OUT + R_IN) / 2, mid)
-          const [lx, ly] = pt(R_OUT + 16, mid)
-          const anchor = nx > 0.2 ? 'start' : nx < -0.2 ? 'end' : 'middle'
+          const [tx, ty] = pt(R_MID, mid + (spring ? along(TIP / 2, R_MID) : 0))
+          // Season label follows the curve; flipped on the lower half so it never reads upside down.
+          const [lx, ly] = pt(R_OUT + 15, mid)
+          const labelRot = midDeg > 90 && midDeg < 270 ? midDeg + 180 : midDeg
           const lines = id ? nameLines(short(id)) : ['bare']
           const season = spring ? 'spring' : 'fall'
           return (
@@ -112,11 +132,11 @@ export function RotationRing(props: { slots: Slots; current?: Slots }) {
               onClick={() => toggle(i)}
               onKeyDown={onKey(i)}
             >
-              <path d={segmentPath(a0, a1, gapBefore, gapAfter)} fill={fill} stroke={fill} strokeWidth={CORNER * 2} strokeLinejoin="round" />
+              <path d={segmentPath(a0, a1, spring, !spring || i === n - 1)} fill={fill} />
               <text
                 x={tx}
                 y={ty - (lines.length - 1) * 7}
-                className={`ring-name ${darkFill ? 'on-dark' : ''}`}
+                className={`ring-name ${id && !isLight(fill) ? 'on-dark' : ''}`}
                 textAnchor="middle"
                 dominantBaseline="central"
               >
@@ -126,22 +146,41 @@ export function RotationRing(props: { slots: Slots; current?: Slots }) {
                   </tspan>
                 ))}
               </text>
-              <text x={lx} y={ly} className="ring-label" textAnchor={anchor} dominantBaseline="central">
-                <tspan className="ring-season">{season}</tspan>
-                <tspan className="ring-year" dx={5} fill={colors.spring}>
-                  Y{year + 1}
-                </tspan>
+              <text
+                className="ring-season"
+                x={lx}
+                y={ly}
+                fill={seasonColor}
+                textAnchor="middle"
+                dominantBaseline="central"
+                transform={`rotate(${labelRot} ${lx} ${ly})`}
+              >
+                {spring ? 'Spring' : 'Fall'}
               </text>
             </g>
+          )
+        })}
+        {/* Year labels sit outside the ring, between each year's spring and fall. */}
+        {Array.from({ length: years }, (_, y) => {
+          const [x, yy] = pt(R_OUT + 44, deg((y * 2 + 1) * step))
+          return (
+            <text
+              key={y}
+              className="ring-year"
+              x={x}
+              y={yy}
+              fill={YEARS[y % YEARS.length].year}
+              textAnchor="middle"
+              dominantBaseline="central"
+            >
+              Y{y + 1}
+            </text>
           )
         })}
       </svg>
       <div className="ring-center" aria-live="polite">
         {lit === null ? (
-          <>
-            <strong>3 years</strong>
-            <span>Tap a piece to see more</span>
-          </>
+          <img className="ring-center-img" src={centerText} alt="3 years. Tap a piece to see more" />
         ) : (
           <RingInfo slot={lit} id={slots[lit]} before={current?.[lit] ?? null} showChange={!!current} />
         )}

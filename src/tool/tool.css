@@ -664,18 +664,19 @@
 .ring-seg { cursor: pointer; outline: none; transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s, filter 0.2s; }
 .ring-svg.has-lit .ring-seg:not(.is-lit) { opacity: 0.45; }
 .ring-seg.is-lit { transform: translate(var(--dx), var(--dy)); filter: brightness(1.08) drop-shadow(0 4px 6px rgba(36, 66, 90, 0.28)); }
-.ring-seg:focus-visible path { stroke-dasharray: 6 5; stroke: var(--text); }
+.ring-seg:focus-visible path { stroke-dasharray: 6 5; stroke: var(--text); stroke-width: 2.5; }
 .ring-name { font: 800 13px/1 var(--body); fill: var(--text); pointer-events: none; }
 .ring-name.on-dark { fill: #fff; }
 .ring-seg.is-bare .ring-name { fill: var(--text-3); font-weight: 700; }
-.ring-label { pointer-events: none; }
-.ring-season { font: 700 13px var(--body); fill: var(--text-2); }
-.ring-year { font: 700 21px var(--hand); }
+/* Outside labels, as in the mockup: seasons in a rounded sans, years in a serif */
+.ring-season { font: 500 17px 'Quicksand', var(--body); pointer-events: none; }
+.ring-year { font: 700 34px 'Playfair Display', Georgia, serif; pointer-events: none; }
+.ring-center-img { display: block; width: 100%; height: auto; }
 .ring-center {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 36%; /* inner circle is 40% of the viewBox */
+  width: 32%; /* inner circle (R_IN 92 of a 250 half-viewBox) is ~37% of the width */
   translate: -50% -50%;
   display: flex;
   flex-direction: column;
