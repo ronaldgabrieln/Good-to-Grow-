@@ -3,11 +3,20 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Memory, Profile, SavedStrategy, SavedStrategyPayload } from './types'
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+// Forgiving about how the settings were pasted: stray spaces or quotes, a trailing slash, or the
+// REST path copied with the URL. Either key name works (Supabase now calls it "publishable").
+const clean = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/^["']|["']$/g, '').trim() : '')
+const url = clean(import.meta.env.VITE_SUPABASE_URL).replace(/\/(rest\/v1)?\/?$/, '')
+const key = clean(import.meta.env.VITE_SUPABASE_ANON_KEY) || clean(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY)
 
 /** False when .env has no Supabase settings: the app then works without profiles. */
 export const profilesConfigured = Boolean(url && key)
+
+/** What the build was given, without the secret part: for the profile drawer's "Connection" line. */
+export const connectionInfo = {
+  host: url ? url.replace(/^https?:\/\//, '') : '(missing VITE_SUPABASE_URL)',
+  keyKind: !key ? '(missing key)' : key.startsWith('sb_publishable_') ? 'publishable key' : key.startsWith('eyJ') ? 'anon key' : key.startsWith('sb_secret_') ? 'SECRET key: replace it with the publishable key' : 'unrecognized key',
+}
 
 let client: SupabaseClient | null = null
 function db(): SupabaseClient {
@@ -23,10 +32,19 @@ export function normalizeUsername(raw: string): string | null {
   return /^[a-z0-9][a-z0-9_.-]{2,31}$/.test(u) ? u : null
 }
 
-function fail(what: string, error: { message: string } | null): never {
+/** Turn Supabase errors into a sentence that says what to fix. */
+function fail(what: string, error: { message: string; code?: string } | null): never {
   const msg = error?.message ?? 'unknown error'
-  if (/relation .* does not exist|schema cache/i.test(msg)) throw new Error(`${what}: the profile tables are missing. Run supabase/schema.sql in the Supabase SQL editor.`)
-  throw new Error(`${what}: ${msg}`)
+  const code = error?.code ?? ''
+  if (code === 'PGRST205' || code === '42P01' || /relation .* does not exist|schema cache|could not find the table/i.test(msg))
+    throw new Error(`${what}: the profile tables are missing. Run supabase/schema.sql in the Supabase SQL Editor.`)
+  if (code === '42501' || /row-level security|permission denied/i.test(msg))
+    throw new Error(`${what}: the database refused it (row-level security). Run supabase/schema.sql again: it creates the access rules.`)
+  if (/invalid api key|no api key|jwt|legacy api keys/i.test(msg))
+    throw new Error(`${what}: Supabase did not accept the key (${msg}). Copy the anon or publishable key from Project Settings → API into VITE_SUPABASE_ANON_KEY and redeploy.`)
+  if (/failed to fetch|networkerror|load failed/i.test(msg))
+    throw new Error(`${what}: could not reach ${connectionInfo.host}. Check VITE_SUPABASE_URL (it should look like https://<project>.supabase.co) and that the project is not paused.`)
+  throw new Error(`${what}: ${msg}${code ? ` (${code})` : ''}`)
 }
 
 /** Find the profile with this username, or create it. */

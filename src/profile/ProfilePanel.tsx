@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useProfile } from './ProfileContext'
 import { downloadStrategyPdf } from './strategyPdf'
+import { connectionInfo } from './supabase'
 import type { SavedStrategy } from './types'
 import './profile.css'
 
@@ -34,6 +35,7 @@ export function SignInForm({ intro }: { intro?: string }) {
       </div>
       <p className="small muted">New username? A profile is made for it. Anyone who knows your username can open it, so don’t use your real name.</p>
       {error && <p className="profile-error">{error}</p>}
+      {error && <p className="small muted">Supabase project: {connectionInfo.host} · {connectionInfo.keyKind}</p>}
     </form>
   )
 }
