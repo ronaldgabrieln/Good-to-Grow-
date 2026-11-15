@@ -57,6 +57,15 @@ No server of our own: the browser talks to Supabase directly with the public ano
 - **Helper memory:** `recall_farmer` gives the helper the farmer's notes and saved plans; `propose_memory` asks to remember a fact with the same Allow/Deny card as plan changes. Farmers can add or delete notes in the drawer. Memory is shown to the model as the farmer's own notes, never as instructions.
 - **PDF** ([strategyPdf.ts](src/profile/strategyPdf.ts)): built in the browser with jsPDF (loaded only on click). It includes a 3-year timeline, the figures against the current rotation, the why/risks/gaps text, field and data inputs, and the method and sources, for an agronomist to review.
 
+## Field node: measured soil moisture (Arduino)
+
+A soil probe on an Arduino gives measured data next to the NASA and model data. It does not change the plans.
+
+- **Firmware:** [firmware/GoodToGrowNano](firmware/GoodToGrowNano/GoodToGrowNano.ino) (Arduino Nano + DHT11 + soil probe + DS3231 clock, logs to EEPROM, serial commands `d`/`s`/`t`/`dry`/`wet`) and [firmware/GoodToGrowNode](firmware/GoodToGrowNode/GoodToGrowNode.ino). Raw recordings are in [field-data/](field-data/).
+- **In the app:** the "From the ground" strip on the results screen ([GroundPanel.tsx](src/tool/GroundPanel.tsx)) loads the first night ([public/data/ground/node-2026-11-15.csv](public/data/ground/node-2026-11-15.csv)) or any node CSV. It shows soil water as a % of the highest peak seen so far (remembered in the browser; a higher later peak becomes the new 100%), fits a drainage curve to find the level the soil drains to ([ground.ts](src/engine/ground.ts)), and compares it with the NASA POWER water demand for that month.
+- **Helper:** `get_ground_readings` lets the planning helper quote the measured readings, labelled as measured and never converted to millimetres.
+- **Limits:** the first test was a basil pot in Ensenada, not a Maneadero field, so the level is a container capacity rather than field capacity; the temperature sensor and clock were damaged on that run.
+
 ## The farmer's flow
 
 1. **Landing → "3d visual"** opens the planner.

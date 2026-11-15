@@ -16,7 +16,7 @@ import {
   type Slots,
 } from '../engine'
 import type { PlanKey } from '../agent/toolDefs'
-import type { AgentContext, YourPlan } from '../agent/toolHandlers'
+import type { AgentContext, GroundContext, YourPlan } from '../agent/toolHandlers'
 import { useProfile } from '../profile/ProfileContext'
 import { ProfileButton, ProfilePanel } from '../profile/ProfilePanel'
 import { PlanSaveBar } from '../profile/PlanSaveBar'
@@ -25,6 +25,7 @@ import type { SavedStrategy } from '../profile/types'
 import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { BrandLogo, HomeButton } from './Brand'
 import { ClimatePanel } from './ClimatePanel'
+import { GroundPanel } from './GroundPanel'
 import { ComparisonTable } from './ComparisonTable'
 import { FieldPanel, PriorityPanel, RotationEditor, ScenarioPanel } from './Controls'
 import { FieldFromSpace } from './FieldFromSpace'
@@ -339,6 +340,7 @@ export default function DecisionTool(props: {
   const yoursStale = selected?.key === 'yours' && (!mine || mine.input !== input)
 
   // The planning agent reads the latest results through this ref (tools run against the engine).
+  const [ground, setGround] = useState<GroundContext | null>(null)
   const agentContext = useRef<AgentContext | null>(null)
   useEffect(() => {
     agentContext.current = result
@@ -362,9 +364,10 @@ export default function DecisionTool(props: {
           remember: async (fact) => {
             await farm.addMemory(fact, 'helper')
           },
+          ground,
         }
       : null
-  }, [result, input, evaluate, terrain, selected?.key, yours, farm])
+  }, [result, input, evaluate, terrain, selected?.key, yours, farm, ground])
   const getAgentContext = useCallback(() => agentContext.current, [])
 
   /** Snapshot of the plan on the card for saving or the PDF (null while it is being recomputed). */
@@ -526,6 +529,7 @@ export default function DecisionTool(props: {
               {terrain ? ` · slope ${fmt(field.slopePct, 1)}% and elevation ${fmt(field.elevationM)} m from NASA SRTM` : ''}
             </p>
             <ClimatePanel result={result} />
+            <GroundPanel result={result} onChange={setGround} />
             <FieldFromSpace frames={frames} />
             <RotationCalendar strategies={result.strategies} features={result.features} />
             <ComparisonTable strategies={result.strategies} weights={weights} />

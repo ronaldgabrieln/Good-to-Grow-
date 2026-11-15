@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CURRENT, DEFAULT_FIELD, DEFAULT_PRIORITIES, DEFAULT_SCENARIO, evaluateSlots, runEngine, type EngineInput, type FieldData } from '../engine'
+import { parseNodeCsv, summarizeGround } from '../engine/ground'
 import { parseSoilGrids } from '../engine/soil'
 import type { PowerColumns } from '../engine/weather'
 import { addToLedger, checkAnswer, parseNumber, type Ledger } from './grounding'
@@ -212,5 +213,36 @@ describe('tools on the Maneadero demo field', () => {
     expect((await call('crop_info', { crop: 'unicorn' })).isError).toBe(true)
     expect((await call('test_climate', { target: { option: 'best', slots: [] }, warmer_c: 9, rain_change_pct: 0 })).isError).toBe(true)
     expect((await call('nope', {})).isError).toBe(true)
+  })
+})
+
+describe('get_ground_readings (field sensor node)', () => {
+  const csv = readFileSync(path.join(__dirname, '..', '..', 'public', 'data', 'ground', 'node-2026-11-15.csv'), 'utf8')
+  const summary = summarizeGround(parseNodeCsv(csv))
+
+  it('says plainly when no readings are loaded', async () => {
+    const out = await runTool('get_ground_readings', {}, { ...ctx, ground: null })
+    expect(JSON.parse(out.content).available).toBe(false)
+  })
+
+  it('returns the measured night with checkable figures', async () => {
+    const out = await runTool('get_ground_readings', {}, { ...ctx, ground: { summary, label: 'night of 14–15 Nov 2026', capacity: null } })
+    const json = JSON.parse(out.content)
+    expect(out.isError).toBe(false)
+    expect(json.available).toBe(true)
+    expect(json.field_capacity_confirmed).toBe(true)
+    expect(json.temperature_measured).toBe(false)
+    const ledger: Ledger = []
+    addToLedger(ledger, out.content)
+    expect(json.soil_water_at_this_recordings_peak_pct_of_highest_peak).toBe(100)
+    const answer = `Your soil went from 100% to ${json.soil_water_now_pct_of_highest_peak}% of its highest peak in ${json.hours_since_this_recordings_peak} hours.`
+    expect(checkAnswer(answer, ledger).unverified).toEqual([])
+  })
+
+  it('measures against an earlier, higher peak', async () => {
+    const capacity = { raw: summary!.peakRaw * 1.1, ms: summary!.peakMs - 864e5, label: 'earlier watering' }
+    const json = JSON.parse((await runTool('get_ground_readings', {}, { ...ctx, ground: { summary, label: 'night', capacity } })).content)
+    expect(json.highest_peak_from).toBe('earlier watering')
+    expect(json.soil_water_at_this_recordings_peak_pct_of_highest_peak).toBeLessThan(100)
   })
 })

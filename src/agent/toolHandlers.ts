@@ -17,6 +17,7 @@ import {
   type Strategy,
 } from '../engine'
 import { doyToLabel } from '../engine/features'
+import { capacityName, describeSite, NODE_CALIBRATION, NODE_SITE, pctOfCapacity, type GroundSummary, type SoilCapacity } from '../engine/ground'
 import type { SavedStrategy } from '../profile/types'
 import { CROP_IDS, LAYERS, PLAN_KEYS, SLOT_VALUES, type OptionKey, type PlanKey } from './toolDefs'
 
@@ -60,6 +61,17 @@ export interface AgentContext {
   remember?: (fact: string) => Promise<void>
   /** Shows a memory proposal in the chat and resolves with the farmer's decision (set by the agent loop). */
   requestMemoryApproval?: (m: MemoryProposal) => Promise<boolean>
+  /** Soil readings from the field node shown on screen, or null/absent when none are loaded. */
+  ground?: GroundContext | null
+}
+
+/** What the "From the ground" panel has loaded. */
+export interface GroundContext {
+  summary: GroundSummary | null
+  /** Which recording, e.g. "night of 14–15 Nov 2026" or the file name. */
+  label: string
+  /** The soil's 100 %: the highest peak seen so far. Null means this recording's peak. */
+  capacity: SoilCapacity | null
 }
 
 export interface FarmerMemory {
@@ -100,6 +112,7 @@ const SCHEMAS = {
   show_on_land: z.object({ option: z.enum(PLAN_KEYS), layer: z.enum(LAYERS) }).strict(),
   propose_change: z.object({ base: z.enum(PLAN_KEYS), slots: z.array(Slot), reason: z.string().max(400) }).strict(),
   recall_farmer: z.object({}).strict(),
+  get_ground_readings: z.object({}).strict(),
   propose_memory: z.object({ fact: z.string().trim().min(3).max(200) }).strict(),
 }
 type ToolName = keyof typeof SCHEMAS
@@ -559,6 +572,66 @@ async function proposeMemory(ctx: AgentContext, fact: string) {
   }
 }
 
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+const localTime = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ')
+
+async function getGroundReadings(ctx: AgentContext) {
+  const g = ctx.ground?.summary
+  if (!ctx.ground || !g) {
+    return {
+      out: { available: false, note: 'No field-node readings are loaded, so there is no measured soil moisture. Everything else comes from NASA POWER, SoilGrids and the model.' },
+      summary: 'Checked your soil sensor: no readings loaded',
+      sources: [],
+    }
+  }
+  const cap = ctx.ground.capacity && ctx.ground.capacity.raw >= g.peakRaw ? ctx.ground.capacity : { raw: g.peakRaw, ms: g.peakMs, label: ctx.ground.label }
+  const pct = (raw: number) => pctOfCapacity(raw, cap.raw)
+  const fit = g.fit
+  const month = new Date(g.startMs).getUTCMonth()
+  const capName = capacityName(NODE_SITE)
+  return {
+    out: {
+      available: true,
+      recording: ctx.ground.label,
+      site: describeSite(NODE_SITE, cropName(NODE_SITE.cropId)),
+      started_local_time: localTime(g.startMs),
+      ended_local_time: localTime(g.endMs),
+      hours_recorded: r(g.hours, 1),
+      readings: g.n,
+      highest_peak_from: cap.label,
+      highest_peak_local_time: localTime(cap.ms),
+      soil_water_at_this_recordings_peak_pct_of_highest_peak: r(pct(g.peakRaw)),
+      soil_water_now_pct_of_highest_peak: r(pct(g.rawEnd)),
+      hours_since_this_recordings_peak: r((g.endMs - g.peakMs) / 3.6e6, 1),
+      drying_last_hour_pct_points_per_hour: r(Math.abs((g.lastHourRatePerH / (cap.raw - NODE_CALIBRATION.dry)) * 100), 1),
+      capacity_kind: capName,
+      field_capacity_confirmed: fit ? fit.settled : false,
+      capacity_level_pct_of_highest_peak: fit ? r(pct(fit.fcRaw)) : null,
+      drainage_time_constant_hours: fit ? r(fit.tauH, 1) : null,
+      temperature_measured: Boolean(g.temp),
+      nasa_power_typical_water_demand_mm_per_day_that_month: r(ctx.result.features.monthly[month].et0MeanMm / DAYS_IN_MONTH[month], 1),
+      meaning: [
+        'Percentages are soil water relative to the wettest reading seen so far (right after a watering), not volumetric water content.',
+        fit
+          ? fit.settled
+            ? `The readings level off at the ${capName}: the "full bucket" after a good watering. Below it, roots are using stored water.`
+            : `The readings had not levelled off yet, so the ${capName} level is an extrapolation.`
+          : 'Not enough drying after the peak to estimate where the soil levels off.',
+        'Recorded at night, so the drop after the peak is mostly drainage, not evaporation.',
+      ],
+      site_notes: NODE_SITE.notes,
+      not_measured: [
+        ...(g.temp ? [] : ['Temperature and humidity (the sensors were damaged this run)']),
+        'Salinity of the soil or the well water',
+        'Water in millimetres: the probe is not calibrated for that',
+      ],
+      note: 'Measured on the farmer’s own sensor, not modeled. These readings do not change the plans. Do not convert them to millimetres of water.',
+    },
+    summary: `Checked your soil sensor (${ctx.ground.label})`,
+    sources: ['GoodToGrow field node (soil probe)', 'NASA POWER'],
+  }
+}
+
 /** Run one tool call. Never throws: errors come back as an is_error result the model can read. */
 export async function runTool(name: string, rawInput: unknown, ctx: AgentContext): Promise<ToolOutput> {
   try {
@@ -607,6 +680,9 @@ export async function runTool(name: string, rawInput: unknown, ctx: AgentContext
       }
       case 'recall_farmer':
         res = await recallFarmer(ctx)
+        break
+      case 'get_ground_readings':
+        res = await getGroundReadings(ctx)
         break
       case 'propose_memory':
         res = await proposeMemory(ctx, (input as z.infer<typeof SCHEMAS.propose_memory>).fact)

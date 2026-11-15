@@ -157,6 +157,13 @@ export const AGENT_TOOLS: Anthropic.Beta.BetaTool[] = [
     strict: true,
   },
   {
+    name: 'get_ground_readings',
+    description:
+      "Soil moisture measured by the GoodToGrow sensor node (a soil probe on an Arduino), as opposed to the satellite and model data: when it was recorded, how wet the soil was at its peak and at the end (as % of the highest peak seen so far), how fast it is drying, the level the soil drains to, the NASA POWER water demand for that month, what the readings mean, and what the sensor did not measure. Call this when the farmer asks how wet their soil is, about their sensor, or about measured (not modeled) data. Returns available false when no readings are loaded.",
+    input_schema: noInput,
+    strict: true,
+  },
+  {
     name: 'propose_memory',
     description:
       "Ask to remember one lasting fact about the farmer or their farm for future conversations, for example a measured well salinity, crops they will not grow, their irrigation equipment or where they sell. The app shows the fact and the farmer taps Allow or Deny; this call returns their decision. Only facts the farmer stated themselves in this conversation; never names, contact details, health, debts or anything they did not say. One fact per call; never say something was remembered unless this returns decision \"allowed\".",
