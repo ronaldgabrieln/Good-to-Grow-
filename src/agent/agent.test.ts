@@ -6,7 +6,8 @@ import { parseSoilGrids } from '../engine/soil'
 import type { PowerColumns } from '../engine/weather'
 import { addToLedger, checkAnswer, parseNumber, type Ledger } from './grounding'
 import { AGENT_TOOLS } from './toolDefs'
-import { runTool, type AgentContext } from './toolHandlers'
+import { runTool, type AgentContext, type Proposal } from './toolHandlers'
+import { screenNote } from './useAgent'
 
 const bundle = JSON.parse(readFileSync(path.join(__dirname, '..', '..', 'public', 'data', 'maneadero-demo.json'), 'utf8')) as {
   power: PowerColumns
@@ -16,7 +17,8 @@ const data: FieldData = { power: bundle.power, soil: parseSoilGrids(bundle.soilg
 const input: EngineInput = { data, field: DEFAULT_FIELD, scenario: DEFAULT_SCENARIO, priorities: DEFAULT_PRIORITIES, current: DEFAULT_CURRENT }
 const result = runEngine(input)
 const showOnLand = vi.fn(() => null)
-const ctx: AgentContext = { result, input, evaluate: async (i, items) => evaluateSlots(i, items), showOnLand }
+const applyPlan = vi.fn()
+const ctx: AgentContext = { result, input, evaluate: async (i, items) => evaluateSlots(i, items), showOnLand, viewing: 'best', yours: null, applyPlan }
 const call = async (name: string, args: unknown) => {
   const out = await runTool(name, args, ctx)
   return { ...out, json: JSON.parse(out.content) }
@@ -123,6 +125,43 @@ describe('tools on the Maneadero demo field', () => {
     const shown = await call('show_on_land', { option: 'best', layer: 'water' })
     expect(shown.isError).toBe(false)
     expect(showOnLand).toHaveBeenCalledWith('best', 'water')
+  })
+
+  it('propose_change waits for the farmer: Allow makes it "Your plan", Deny changes nothing', async () => {
+    const best = result.strategies.find((s) => s.type === 'best')!
+    const after = best.rotation.slots.map((x, i) => (i === 3 ? 'none' : (x ?? 'none')))
+    if (after[3] === (best.rotation.slots[3] ?? 'none')) after[3] = 'vetch'
+    const seen: Proposal[] = []
+    const ask = (answer: boolean) => ({ ...ctx, requestApproval: async (p: Proposal) => (seen.push(p), answer) })
+
+    applyPlan.mockClear()
+    const no = JSON.parse((await runTool('propose_change', { base: 'best', slots: after, reason: 'Menos agua.' }, ask(false))).content)
+    expect(no.decision).toBe('denied')
+    expect(applyPlan).not.toHaveBeenCalled()
+    expect(seen[0].changes).toHaveLength(1)
+    expect(seen[0].changes[0].season).toBe('Year 2 fall')
+    expect(seen[0].baseMetrics).not.toBeNull()
+
+    const yes = JSON.parse((await runTool('propose_change', { base: 'best', slots: after, reason: 'Menos agua.' }, ask(true))).content)
+    expect(yes.decision).toBe('allowed')
+    expect(applyPlan).toHaveBeenCalledWith({ from: 'best', slots: after.map((x) => (x === 'none' ? null : x)) })
+    expect(typeof yes.change_versus_plan_before_the_change.irrigation_change_pct).toBe('number')
+
+    // The same rotation again is not a change; with no approval channel nothing can be proposed.
+    expect((await runTool('propose_change', { base: 'best', slots: best.rotation.slots.map((x) => x ?? 'none'), reason: '' }, ask(true))).isError).toBe(true)
+    expect((await runTool('propose_change', { base: 'best', slots: after, reason: '' }, ctx)).isError).toBe(true)
+  })
+
+  it('"yours" works as a target once it exists, and the screen note names the open plan', async () => {
+    expect((await call('season_plan', { target: { option: 'yours', slots: [] } })).isError).toBe(true)
+    const yours = { from: 'best' as const, slots: result.strategies.find((s) => s.type === 'small-change')!.rotation.slots }
+    const withPlan: AgentContext = { ...ctx, viewing: 'yours', yours }
+    const plan = await runTool('season_plan', { target: { option: 'yours', slots: [] } }, withPlan)
+    expect(plan.isError).toBe(false)
+    const options = JSON.parse((await runTool('get_options', {}, withPlan)).content)
+    expect(options.farmer_is_looking_at.option).toBe('yours')
+    expect(options.your_plan.started_from).toBe('best')
+    expect(screenNote(withPlan)).toMatch(/looking at "Your plan".*edited from "Best for you"/)
   })
 
   it('rejects bad input as an error result instead of guessing', async () => {

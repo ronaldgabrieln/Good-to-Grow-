@@ -1,7 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { useCallback, useRef, useState } from 'react'
 import { addToLedger, checkAnswer, type GroundingReport, type Ledger } from './grounding'
-import { runTool, type AgentContext } from './toolHandlers'
+import { PLAIN_TITLE } from '../tool/plans'
+import { runTool, type AgentContext, type Proposal } from './toolHandlers'
 
 /** Tool rounds allowed per question before the agent must answer. */
 export const MAX_TOOL_ROUNDS = 8
@@ -11,10 +12,21 @@ export interface ChatStep {
   isError: boolean
 }
 
+export type ProposalStatus = 'pending' | 'allowed' | 'denied'
+export interface ChatProposal extends Proposal {
+  status: ProposalStatus
+  /** Where in the answer text the proposal appeared, so the card shows in reading order. */
+  textAt: number
+}
+
 export interface ChatTurn {
   id: number
   role: 'user' | 'assistant'
   text: string
+  /** User turns: the plan the farmer had open when asking. */
+  about?: string
+  /** Assistant turns: changes the helper proposed in this answer. */
+  proposals?: ChatProposal[]
   steps: ChatStep[]
   sources: string[]
   status: 'working' | 'done' | 'error'
@@ -33,6 +45,12 @@ class AgentError extends Error {
     super(message)
     this.kind = kind
   }
+}
+
+/** The app's note in front of each question, so the helper knows which plan is on screen. */
+export function screenNote(ctx: AgentContext): string {
+  const mine = ctx.yours ? ` The farmer also has "Your plan" (option yours), edited from "${PLAIN_TITLE[ctx.yours.from]}".` : ''
+  return `[On screen: the farmer is looking at "${PLAIN_TITLE[ctx.viewing]}" (option ${ctx.viewing}).${mine}]`
 }
 
 /** One Messages API call through the local server, streaming text deltas. */
@@ -84,6 +102,8 @@ export function useAgent(getContext: () => AgentContext | null) {
   const ledger = useRef<Ledger>([])
   const abort = useRef<AbortController | null>(null)
   const nextId = useRef(0)
+  /** Pending Allow/Deny decisions, by proposal id. */
+  const waiting = useRef(new Map<string, (allowed: boolean) => void>())
 
   const update = (id: number, fn: (t: ChatTurn) => ChatTurn) => setTurns((all) => all.map((t) => (t.id === id ? fn(t) : t)))
 
@@ -98,11 +118,25 @@ export function useAgent(getContext: () => AgentContext | null) {
     const id = ++nextId.current
     setTurns((all) => [
       ...all,
-      { id: userId, role: 'user', text: q, steps: [], sources: [], status: 'done' },
-      { id, role: 'assistant', text: '', steps: [], sources: [], status: 'working' },
+      { id: userId, role: 'user', text: q, about: PLAIN_TITLE[ctx0.viewing], steps: [], sources: [], status: 'done' },
+      { id, role: 'assistant', text: '', steps: [], sources: [], proposals: [], status: 'working' },
     ])
     setBusy(true)
-    history.current.push({ role: 'user', content: q })
+    history.current.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: screenNote(ctx0) },
+        { type: 'text', text: q },
+      ],
+    })
+
+    // propose_change waits here until the farmer taps Allow or Deny (or stops the question).
+    const requestApproval = (p: Proposal) =>
+      new Promise<boolean>((resolve) => {
+        if (ctrl.signal.aborted) return resolve(false)
+        waiting.current.set(p.id, resolve)
+        update(id, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { ...p, status: 'pending', textAt: text.length }] }))
+      })
 
     let text = ''
     let roundText = ''
@@ -139,8 +173,9 @@ export function useAgent(getContext: () => AgentContext | null) {
           })
           continue
         }
-        const ctx = getContext() ?? ctx0
+        const ctx = { ...(getContext() ?? ctx0), requestApproval }
         const outputs = await Promise.all(calls.map((c) => runTool(c.name, c.input, ctx)))
+        if (ctrl.signal.aborted) throw new AgentError('stopped', 'Stopped.')
         outputs.forEach((o) => {
           if (!o.isError) addToLedger(ledger.current, o.content)
         })
@@ -170,13 +205,33 @@ export function useAgent(getContext: () => AgentContext | null) {
     }
   }, [getContext])
 
-  const stop = useCallback(() => abort.current?.abort(), [])
+  /** The farmer's answer to a proposal. */
+  const decide = useCallback((proposalId: string, allowed: boolean) => {
+    const resolve = waiting.current.get(proposalId)
+    if (!resolve) return
+    waiting.current.delete(proposalId)
+    const status: ProposalStatus = allowed ? 'allowed' : 'denied'
+    setTurns((all) => all.map((t) => (t.proposals?.some((p) => p.id === proposalId) ? { ...t, proposals: t.proposals.map((p) => (p.id === proposalId ? { ...p, status } : p)) } : t)))
+    resolve(allowed)
+  }, [])
+
+  /** Stopping counts as "no" for any change still waiting. */
+  const denyPending = useCallback(() => {
+    for (const pid of [...waiting.current.keys()]) decide(pid, false)
+  }, [decide])
+
+  const stop = useCallback(() => {
+    abort.current?.abort()
+    denyPending()
+  }, [denyPending])
   const reset = useCallback(() => {
     abort.current?.abort()
+    denyPending()
     history.current = []
     ledger.current = []
     setTurns([])
-  }, [])
+  }, [denyPending])
 
-  return { turns, busy, ask, stop, reset }
+  const waitingForYou = turns.some((t) => t.proposals?.some((p) => p.status === 'pending'))
+  return { turns, busy, waitingForYou, ask, stop, reset, decide }
 }

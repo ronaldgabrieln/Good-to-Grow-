@@ -447,7 +447,7 @@
 .option-more p { margin: 0 0 6px; }
 .option-ext { padding: 8px 10px; border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 3px; }
 .details-btn { margin-top: 4px; }
-.simple-foot { margin: 0; }
+.simple-foot { margin: 0; padding-bottom: 64px; /* room for the floating helper button */ }
 .details { border-top: 2px dashed rgba(36, 66, 90, 0.18); }
 .run-line { margin: 0; }
 @media (max-width: 980px) {
@@ -579,6 +579,7 @@
 .choice-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 108px;
+  grid-template-areas: 'goals goals' 'hero side';
   border-radius: 30px;
   background: var(--surface);
   box-shadow: var(--paper-shadow);
@@ -650,9 +651,26 @@
 .choice-tile.is-on .choice-tile-icon { opacity: 1; filter: none; transform: translateY(-3px); box-shadow: 0 6px 0 rgba(36, 66, 90, 0.2); }
 @media (hover: hover) { .choice-tile:not(.is-on):hover .choice-tile-icon { opacity: 0.85; filter: none; transform: translateY(-2px); } }
 .choice-tile:focus-visible { outline: 3px dashed var(--accent); outline-offset: 4px; border-radius: 12px; }
+/* The card's two pickers share one look: "what matters" tiles along the top, plans down the right */
+.choice-goals { grid-area: goals; padding: 14px 18px 4px; border-bottom: 1px dashed var(--line); }
+.choice-goals-q { display: block; font-size: 13.5px; font-weight: 800; color: var(--text-2); }
+.choice-hero { grid-area: hero; }
+.choice-tiles--side { grid-area: side; }
+.choice-tiles--top { flex-direction: row; justify-content: space-around; gap: 10px; padding: 10px 0 8px; }
+.choice-tiles--top .choice-tile { flex: 1; min-width: 0; max-width: 120px; }
+.choice-tiles--top .choice-tile-icon { max-width: 56px; }
+.choice-tile-yours { --tile: var(--text); }
+.choice-tile-balanced { --tile: #7d8a4a; }
+.choice-tile-water { --tile: #3f86b5; }
+.choice-tile-income { --tile: #c39a2e; }
+.choice-tile-soil { --tile: #8a5a3b; }
+.hero-warn { margin: 0; padding: 6px 10px; border-radius: 3px; background: var(--warn-bg); border-left: 4px solid var(--warn-line); font-size: 13.5px; font-weight: 600; }
+.hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.hero-review { width: auto; margin: 0; padding: 8px 16px; font-size: 15px; }
 /* Phones: not enough width for a side column, so the tiles go back to a row under the hero */
 @media (max-width: 520px) {
-  .choice-card { grid-template-columns: 1fr; }
+  .choice-card { grid-template-columns: 1fr; grid-template-areas: 'goals' 'hero' 'side'; }
+  .choice-goals { padding: 12px 8px 4px; }
   .choice-tiles { flex-direction: row; justify-content: space-between; gap: 6px; padding: 14px 8px 16px; }
   .choice-tile { flex: 1; min-width: 0; }
   .choice-tile-label { font-size: 15px; }
@@ -691,3 +709,26 @@
 .ring-center strong { font: 700 clamp(18px, 6cqw, 26px)/1.05 var(--hand); color: var(--text); overflow-wrap: anywhere; }
 .ring-center em { margin-top: 2px; font-style: normal; font-weight: 800; color: var(--accent); }
 .ring-when { font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.85em; color: var(--text-3); }
+
+/* Which plan the helper is talking about, and the changes it proposes (Allow / Deny) */
+.agent-about { margin: 4px 0 2px; font-size: 14px; }
+.agent-about strong { color: var(--accent); }
+.msg-about { display: block; margin-bottom: 2px; font-size: 11.5px; font-weight: 700; opacity: 0.8; }
+.proposal { margin: 8px 0 2px; padding: 10px 12px; border-radius: 6px; background: #fff; box-shadow: 0 0 0 2px var(--accent), 1px 3px 0 rgba(36, 66, 90, 0.14); }
+.proposal.is-denied { box-shadow: 0 0 0 1px var(--line); opacity: 0.75; }
+.proposal.is-allowed { box-shadow: 0 0 0 1px var(--accent); }
+.proposal p { margin: 0; }
+.proposal-kicker { font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); }
+.proposal-title { font: 700 21px/1.1 var(--hand); }
+.proposal-reason { margin-top: 4px !important; font-size: 14px; }
+.proposal-changes, .proposal-stats, .proposal-problems { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 3px; font-size: 14px; }
+.proposal-changes li { margin: 0; }
+.proposal-changes s { color: var(--text-3); }
+.proposal-season { display: inline-block; min-width: 104px; font-size: 12px; font-weight: 800; color: var(--text-2); }
+.proposal-stats { flex-direction: row; flex-wrap: wrap; gap: 4px 12px; font-weight: 700; font-size: 13.5px; }
+.proposal-stats li, .proposal-problems li { margin: 0; }
+.proposal-problems { color: #8a4a12; font-size: 13px; font-weight: 600; }
+.proposal-actions { display: flex; gap: 8px; margin-top: 10px; }
+.proposal-actions .btn { width: auto; margin: 0; padding: 8px 20px; }
+.proposal-done { margin-top: 8px !important; font-size: 13.5px; font-weight: 700; color: var(--accent); }
+.proposal.is-denied .proposal-done { color: var(--text-2); }

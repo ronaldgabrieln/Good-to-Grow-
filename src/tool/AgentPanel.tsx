@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { checkAnswer, type Ledger } from '../agent/grounding'
 import type { AgentContext } from '../agent/toolHandlers'
-import { useAgent, type ChatTurn } from '../agent/useAgent'
+import { useAgent, type ChatProposal, type ChatTurn } from '../agent/useAgent'
+import { plainStats } from './plans'
 
 const STARTERS = [
-  '¿Por qué esta es la mejor opción para mí?',
-  'What if I keep doing what I do now?',
+  '¿Por qué me recomiendas este plan?',
+  'Change one season of this plan to use less water.',
   '¿Qué tengo que hacer este otoño?',
-  'What could go wrong with the best option?',
+  'What could go wrong with this plan?',
 ]
 
 /** Inline text: **bold** plus number marks (numbers not found in the analysis are underlined). */
@@ -50,7 +51,55 @@ function Formatted({ text, ledger }: { text: string; ledger: Ledger | null }) {
   return <>{blocks}</>
 }
 
-function AssistantTurn({ turn }: { turn: ChatTurn }) {
+/** A change the helper wants to make: what changes, what it does, and Allow / Deny. */
+function ProposalCard({ p, onDecide }: { p: ChatProposal; onDecide: (allowed: boolean) => void }) {
+  const stats = p.metrics ? plainStats(p.metrics, p.baseMetrics) : []
+  return (
+    <div className={`proposal is-${p.status}`} role="group" aria-label={`Proposed change to ${p.baseTitle}`}>
+      <p className="proposal-kicker">The helper wants to change</p>
+      <p className="proposal-title">{p.baseTitle}</p>
+      {p.reason && <p className="proposal-reason">{p.reason}</p>}
+      <ul className="proposal-changes">
+        {p.changes.map((c) => (
+          <li key={c.season}>
+            <span className="proposal-season">{c.season}</span>
+            <s>{c.from}</s> → <strong>{c.to}</strong>
+          </li>
+        ))}
+      </ul>
+      {stats.length > 0 && (
+        <ul className="proposal-stats" aria-label="Compared with the plan before the change">
+          {stats.map((st) => (
+            <li key={st.label} className={`tone-${st.tone}`}>
+              {st.tone === 'good' ? '▲' : st.tone === 'bad' ? '▼' : '•'} {st.text}
+            </li>
+          ))}
+        </ul>
+      )}
+      {p.problems.length > 0 && (
+        <ul className="proposal-problems">
+          {p.problems.map((x) => (
+            <li key={x}>⚠ {x}</li>
+          ))}
+        </ul>
+      )}
+      {p.status === 'pending' ? (
+        <div className="proposal-actions">
+          <button type="button" className="btn proposal-allow" onClick={() => onDecide(true)}>
+            Allow
+          </button>
+          <button type="button" className="btn btn-quiet proposal-deny" onClick={() => onDecide(false)}>
+            Deny
+          </button>
+        </div>
+      ) : (
+        <p className="proposal-done">{p.status === 'allowed' ? '✓ Allowed. It is now “Your plan” on the card.' : '✕ Denied. Nothing changed.'}</p>
+      )}
+    </div>
+  )
+}
+
+function AssistantTurn({ turn, onDecide }: { turn: ChatTurn; onDecide: (id: string, allowed: boolean) => void }) {
   const done = turn.status === 'done'
   const ledger = done ? (turn.ledger ?? null) : null
   return (
@@ -69,13 +118,22 @@ function AssistantTurn({ turn }: { turn: ChatTurn }) {
           </ul>
         </details>
       )}
-      {turn.text ? (
-        <div className="msg-text">
-          <Formatted text={turn.text} ledger={ledger} />
-        </div>
-      ) : (
-        turn.status === 'working' && <p className="msg-thinking">Thinking…</p>
-      )}
+      {!turn.text && turn.status === 'working' && !turn.proposals?.length && <p className="msg-thinking">Thinking…</p>}
+      {/* Text and proposal cards in the order they came: text before the proposal, the card, text after. */}
+      {[...(turn.proposals ?? []), null].map((p, i, all) => {
+        const from = i === 0 ? 0 : (all[i - 1]?.textAt ?? 0)
+        const part = turn.text.slice(from, p ? p.textAt : undefined).trim()
+        return (
+          <div key={p?.id ?? 'end'}>
+            {part && (
+              <div className="msg-text">
+                <Formatted text={part} ledger={ledger} />
+              </div>
+            )}
+            {p && <ProposalCard p={p} onDecide={(allowed) => onDecide(p.id, allowed)} />}
+          </div>
+        )
+      })}
       {turn.error && <p className={`msg-error ${turn.error.kind === 'not_configured' ? 'is-setup' : ''}`}>{turn.error.message}</p>}
       {done && turn.report && turn.report.checked > 0 && (
         <p className={`msg-check ${turn.report.unverified.length ? 'has-unverified' : ''}`}>
@@ -98,13 +156,34 @@ function AssistantTurn({ turn }: { turn: ChatTurn }) {
   )
 }
 
-/** "Ask about your plan": a drawer where the farmer discusses the options with a grounded agent. */
-export function AgentPanel({ getContext }: { getContext: () => AgentContext | null }) {
-  const [open, setOpen] = useState(false)
+/** A question the page asks on the farmer's behalf (e.g. "Review this plan"). */
+export interface AgentRequest {
+  id: number
+  text: string
+}
+
+/** "Ask about your plan": a drawer where the farmer discusses the plans with a grounded agent. */
+export function AgentPanel(props: {
+  getContext: () => AgentContext | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** The plan open on the card, shown as "Talking about". */
+  viewingTitle: string
+  request: AgentRequest | null
+}) {
+  const { getContext, open, request } = props
+  const setOpen = props.onOpenChange
   const [draft, setDraft] = useState('')
-  const { turns, busy, ask, stop, reset } = useAgent(getContext)
+  const { turns, busy, waitingForYou, ask, stop, reset, decide } = useAgent(getContext)
   const endRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const handled = useRef(0)
+
+  useEffect(() => {
+    if (!request || request.id === handled.current || busy) return
+    handled.current = request.id
+    void ask(request.text)
+  }, [request, busy, ask])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
@@ -132,6 +211,10 @@ export function AgentPanel({ getContext }: { getContext: () => AgentContext | nu
           <header className="agent-head">
             <div>
               <h2>Ask about your plan</h2>
+              <p className="agent-about">
+                Talking about: <strong>{props.viewingTitle}</strong>
+                <span className="small muted"> · pick another plan on the card to switch</span>
+              </p>
               <p className="small muted">Answers come only from your field's analysis. Pregunta en español o inglés.</p>
             </div>
             {turns.length > 0 && (
@@ -160,10 +243,11 @@ export function AgentPanel({ getContext }: { getContext: () => AgentContext | nu
             {turns.map((t) =>
               t.role === 'user' ? (
                 <div key={t.id} className="msg msg-user">
+                  {t.about && <span className="msg-about">About: {t.about}</span>}
                   {t.text}
                 </div>
               ) : (
-                <AssistantTurn key={t.id} turn={t} />
+                <AssistantTurn key={t.id} turn={t} onDecide={decide} />
               ),
             )}
             <div ref={endRef} />
@@ -181,7 +265,7 @@ export function AgentPanel({ getContext }: { getContext: () => AgentContext | nu
               value={draft}
               rows={2}
               maxLength={1000}
-              placeholder="Ask a question… / Escribe tu pregunta…"
+              placeholder={waitingForYou ? 'Allow or deny the change above first…' : 'Ask a question… / Escribe tu pregunta…'}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
