@@ -229,6 +229,14 @@
 .chart .bar-rain { fill: var(--rain); }
 .chart .line-et0 { fill: none; stroke: var(--et0); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart .dot-et0 { fill: var(--et0); stroke: var(--surface); stroke-width: 2; }
+.chart .line-soil { fill: none; stroke: var(--rain); stroke-width: 2; stroke-linejoin: round; }
+.chart .line-fit { fill: none; stroke: var(--et0); stroke-width: 2; stroke-dasharray: 6 4; }
+.chart .dot-soil { fill: var(--rain); stroke: var(--surface); stroke-width: 2; }
+.chart .ref-line { stroke: var(--text-3); stroke-width: 1; stroke-dasharray: 2 4; }
+.chart .ref-fc { stroke: var(--modeled); stroke-dasharray: 4 3; }
+.chart .axis-fc { fill: var(--modeled); }
+.ground-load { margin-top: 12px; cursor: pointer; }
+.error-text { color: var(--error); }
 .chart .crosshair { stroke: var(--text-3); stroke-width: 1; }
 .chart-tip, .cal-tip {
   position: absolute;

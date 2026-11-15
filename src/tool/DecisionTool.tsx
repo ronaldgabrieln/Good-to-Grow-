@@ -21,6 +21,7 @@ import { ClimatePanel } from './ClimatePanel'
 import { ComparisonTable } from './ComparisonTable'
 import { FieldPanel, PriorityPanel, RotationEditor, ScenarioPanel } from './Controls'
 import { FieldFromSpace } from './FieldFromSpace'
+import { GroundPanel } from './GroundPanel'
 import { fmt } from './format'
 import type { Frame } from './landsatFrames'
 import { RotationCalendar } from './RotationCalendar'
@@ -287,6 +288,7 @@ export default function DecisionTool(props: {
               {terrain ? ` · slope ${fmt(field.slopePct, 1)}% and elevation ${fmt(field.elevationM)} m from NASA SRTM` : ''}
             </p>
             <ClimatePanel result={result} />
+            <GroundPanel result={result} />
             <FieldFromSpace frames={frames} />
             <RotationCalendar strategies={result.strategies} features={result.features} />
             <ComparisonTable strategies={result.strategies} weights={weights} />
