@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import './App.css'
 import Planner from './tool/Planner'
 import homeImg from './assets/home.svg'
@@ -24,6 +24,32 @@ const TEAM = [
   { file: 'elena.svg', alt: 'Elena De Basabe Vargas, 2nd year Software Engineering' },
   { file: 'plant.svg', alt: 'Barrios, the plant' },
 ]
+
+// The art gallery: four screens after the team, laid out like the mockups. Each piece already
+// carries its caption. x / y / w are % of a 16:9 screen (left, top, width), measured from the mockups.
+// toRight: stick to the window's right edge (not the 16:9 screen's), so it reaches the very end
+// on wide windows too; x is then ignored.
+type Art = { file: string; alt: string; x: number; y: number; w: number; toRight?: boolean }
+const GALLERY: Art[][] = [
+  [
+    { file: 'art_gallery.svg', alt: 'Art gallery', x: 11.4, y: 1.1, w: 29.4 },
+    { file: 'art2.svg', alt: '"Farmers house", Elena De Basabe (2026), mixed media', x: 3.05, y: 33.1, w: 68.7 },
+    { file: 'art1.svg', alt: '"Blue hour at the fields", Elena De Basabe (2026), mixed media', x: 51.6, y: 6.7, w: 44.5 },
+  ],
+  [
+    { file: 'art3.svg', alt: '"Barn at the fields", Elena De Basabe (2026), mixed media', x: 1.2, y: 7.4, w: 46.4 },
+    { file: 'art4.svg', alt: '"Vicky the scarecrow – Head", Elena De Basabe (2026), mixed media', x: 32.6, y: 46.3, w: 25.2 },
+    { file: 'art5.svg', alt: '"Vicky the scarecrow", Elena De Basabe (2026), mixed media', x: 57.9, y: 3.3, w: 31.3 },
+    { file: 'art6.svg', alt: 'Our crops', x: 89.5, y: 11.4, w: 11.9 },
+  ],
+  [{ file: 'art7.svg', alt: '"Crops and such", Elena De Basabe (2026), mixed media', x: 1.1, y: 2.9, w: 96.8 }],
+  [
+    { file: 'art8.svg', alt: '"Los Carbones remix", Elena De Basabe (2026), mixed media', x: 7.5, y: 10.9, w: 43.8 },
+    { file: 'art9.svg', alt: 'To do list: the 36 crops, from the sketchbook', x: 50.3, y: -5.3, w: 49.5, toRight: true },
+  ],
+]
+// Screens side by side: page 1, the team, then the gallery.
+const STORY_SCREENS = 2 + GALLERY.length
 
 // '#3d-visual' (the landing's first button) opens the rotation planner.
 const viewFromHash = (): View => {
@@ -62,25 +88,38 @@ function App() {
   const isStory = view === 'story'
 
   // "Our story" really scrolls: an invisible scroller covers the page and the browser does the
-  // scrolling (wheel, trackpad momentum, touch, keys, scrollbar). How far down it is (0 → 1)
-  // goes to the CSS variable --p, which slides page 1 out to the left and the team in from the
-  // right, 1 px of scroll = 1 px sideways. Set straight on the element, so no re-render per frame.
+  // scrolling (wheel, trackpad momentum, touch, keys, scrollbar). How far down it is, in screens
+  // (0 → STORY_SCREENS - 1), goes to the CSS variable --x, which slides the screens sideways:
+  // 1 px of scroll = 1 px sideways. Set straight on the element, so no re-render per frame.
   const sceneRef = useRef<HTMLElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
+  const storyX = useRef(0)
   const onStoryScroll = useCallback(() => {
     const el = scrollerRef.current
     if (!el) return
     const max = el.scrollHeight - el.clientHeight
-    sceneRef.current?.style.setProperty('--p', String(max > 0 ? el.scrollTop / max : 0))
+    storyX.current = max > 0 ? (el.scrollTop / max) * (STORY_SCREENS - 1) : 0
+    sceneRef.current?.style.setProperty('--x', String(storyX.current))
   }, [])
 
   useEffect(() => {
     if (!isStory) {
-      sceneRef.current?.style.setProperty('--p', '0') // leaving: everything glides back
+      storyX.current = 0
+      sceneRef.current?.style.setProperty('--x', '0') // leaving: everything glides back
       return
     }
     scrollerRef.current?.scrollTo(0, 0)
     scrollerRef.current?.focus({ preventScroll: true }) // so arrow keys / space scroll it
+    // The track's length follows the window width, so on resize put the scroll back where it
+    // was (same screen, same spot) instead of letting the strip drift between screens.
+    const onResize = () => {
+      const el = scrollerRef.current
+      if (!el) return
+      const max = el.scrollHeight - el.clientHeight
+      el.scrollTop = (storyX.current / (STORY_SCREENS - 1)) * max
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [isStory])
 
   if (view === 'planner')
@@ -149,7 +188,11 @@ function App() {
           tabIndex={-1}
           aria-hidden="true"
         >
-          <div className="story-scroll-track" />
+          {/* one window height + one window width per extra screen */}
+          <div
+            className="story-scroll-track"
+            style={{ height: `calc(100vh + ${STORY_SCREENS - 1} * 100vw)` }}
+          />
         </div>
       )}
 
@@ -168,8 +211,8 @@ function App() {
         <img className="story-heart" src={storyAsset('heart.svg')} alt="" />
         <img className="story-doodle" src={storyAsset('doodle.svg')} alt="" />
 
-        {/* Page 2: the team. Enters from the right while page 1 leaves to the left. */}
-        <div className="team-page">
+        {/* Screen 2: the team. Enters from the right while page 1 leaves to the left. */}
+        <div className="strip-page team-page" style={{ '--i': 1 } as CSSProperties}>
           <div className="team-stage">
             <h2 className="team-title">
               <img src={storyAsset('the_team.svg')} alt="The team" />
@@ -185,6 +228,30 @@ function App() {
             <img className="team-sign" src={storyAsset('los_carbones_remix.svg')} alt="Los carbones remix" />
           </div>
         </div>
+
+        {/* Screens 3–6: the art gallery (the patterned background has faded out by now). */}
+        {GALLERY.map((screen, s) => (
+          <div
+            key={s}
+            className="strip-page gallery-page"
+            style={{ '--i': s + 2 } as CSSProperties}
+            role="group"
+            aria-label={s === 0 ? 'Art gallery' : undefined}
+          >
+            <div className="gallery-stage">
+              {screen.map((a) => (
+                <img
+                  key={a.file}
+                  className={`gallery-art${a.toRight ? ' gallery-art--to-right' : ''}`}
+                  src={storyAsset(a.file)}
+                  alt={a.alt}
+                  loading="lazy"
+                  style={{ ...(a.toRight ? {} : { left: `${a.x}%` }), top: `${a.y}%`, width: `${a.w}%` }}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
 
         <a className="back-btn" href="#">
           <img src={homeImg} alt="home" />

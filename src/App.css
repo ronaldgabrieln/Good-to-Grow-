@@ -41,7 +41,7 @@
    Only the elements that move between views are listed, so the buttons'
    hover effect (on their inner <img>) keeps working. */
 .scene:not(.is-animating)
-  :is(.frame, .logo, .paper-btn, .footer, .story-text, .story-heart, .story-doodle, .back-btn, .story-bg, .team-page) {
+  :is(.frame, .logo, .paper-btn, .footer, .story-text, .story-heart, .story-doodle, .back-btn, .story-bg, .strip-page) {
   transition: none !important;
 }
 
@@ -261,7 +261,7 @@
   transition: opacity 0.5s ease;
 }
 /* going home from anywhere in the story: the strip glides back (transform) */
-.scene[data-view='landing'] .team-page {
+.scene[data-view='landing'] .strip-page {
   transition: transform 0.6s var(--ease);
 }
 
@@ -375,9 +375,11 @@
     opacity 0.8s ease 0.15s;
 }
 
-/* the background fades in once the painting has started shrinking, then stays */
+/* the background fades in once the painting has started shrinking, stays behind
+   page 1 and the team, then fades out as the art gallery scrolls in (x 1 → 2),
+   leaving the gallery on plain white */
 .scene[data-view='story'] .story-bg {
-  opacity: 1;
+  opacity: clamp(0, 2 - var(--x, 0), 1);
   transition: opacity 0.9s ease 0.3s;
 }
 
@@ -400,19 +402,40 @@
   scrollbar-width: thin;
   scrollbar-color: #6a99a3 transparent;
 }
-.story-scroll-track {
-  height: calc(100vh + 100vw);
-}
+/* (its height, one window + 100vw per extra screen, is set in App.tsx) */
 
+/* --x = how many screens we have scrolled (0 = page 1, 1 = the team, 2+ = gallery) */
 .scene :is(.frame, .story-text, .story-heart) {
-  transform: translateX(calc(var(--p, 0) * -100vw));
+  transform: translateX(calc(var(--x, 0) * -100vw));
 }
 /* the doodle is rotated 90deg, so its own "down" is the screen's "left" */
 .scene .story-doodle {
-  transform: translateY(calc(var(--p, 0) * 100vw));
+  transform: translateY(calc(var(--x, 0) * 100vw));
 }
-.scene .team-page {
-  transform: translateX(calc((1 - var(--p, 0)) * 100vw));
+/* every later screen sits --i windows to the right of page 1 */
+.scene .strip-page {
+  transform: translateX(calc((var(--i) - var(--x, 0)) * 100vw));
+}
+
+/* ---------- Art gallery screens (positions per piece come from App.tsx) ---------- */
+.gallery-page {
+  position: absolute;
+  inset: 0;
+}
+.gallery-stage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(100vw, 100vh * 16 / 9);
+  aspect-ratio: 16 / 9;
+  translate: -50% -50%;
+}
+.gallery-stage .gallery-art {
+  position: absolute;
+}
+/* reaches past the 16:9 screen to the window's right edge (the side margin on wide windows) */
+.gallery-stage .gallery-art--to-right {
+  right: calc((min(100vw, 100vh * 16 / 9) - 100vw) / 2);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -524,6 +547,26 @@
     background: rgb(200 209 217 / 0.55);
   }
   .team-card { width: auto; }
+
+  /* gallery: the pieces of each screen stacked, sharing the height */
+  .gallery-stage {
+    top: 4vh;
+    bottom: 16vh;
+    width: calc(100vw - 32px);
+    aspect-ratio: auto;
+    translate: -50% 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2vh;
+  }
+  .gallery-stage .gallery-art {
+    position: static;
+    flex: 1 1 0;
+    min-height: 0;
+    width: 100% !important;
+    object-fit: contain;
+  }
   .team-stage .team-sign { width: 100%; }
 
   .back-btn {
