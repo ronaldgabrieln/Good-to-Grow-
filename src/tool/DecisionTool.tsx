@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   CROP_BY_ID,
   DEFAULT_PRIORITIES,
@@ -17,6 +17,11 @@ import {
 } from '../engine'
 import type { PlanKey } from '../agent/toolDefs'
 import type { AgentContext, YourPlan } from '../agent/toolHandlers'
+import { useProfile } from '../profile/ProfileContext'
+import { ProfileButton, ProfilePanel } from '../profile/ProfilePanel'
+import { PlanSaveBar } from '../profile/PlanSaveBar'
+import { buildPayload } from '../profile/snapshot'
+import type { SavedStrategy } from '../profile/types'
 import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { BrandLogo, HomeButton } from './Brand'
 import { ClimatePanel } from './ClimatePanel'
@@ -154,7 +159,7 @@ function TileIcon({ type }: { type: PlanKey | GoalKey }) {
 }
 
 /** The big middle of the card: what the picked plan is, and why. */
-function OptionHero(props: { plan: PlanView; base: RotationMetrics | null; current?: Slots; onReview: () => void; onUndo?: () => void }) {
+function OptionHero(props: { plan: PlanView; base: RotationMetrics | null; current?: Slots; onReview: () => void; onUndo?: () => void; extra?: ReactNode }) {
   const { plan } = props
   const isCurrent = plan.key === 'current'
   const stats = isCurrent || !plan.metrics ? [] : plainStats(plan.metrics, props.base)
@@ -190,6 +195,7 @@ function OptionHero(props: { plan: PlanView; base: RotationMetrics | null; curre
             Undo my changes
           </button>
         )}
+        {props.extra}
       </div>
     </div>
   )
@@ -227,6 +233,12 @@ export default function DecisionTool(props: {
   initialField: FieldInput
   initialCurrent: Slots
   initialPriorities?: Priorities
+  /** When reopening a saved plan: its climate test, which plan was open, and the farmer's edited plan. */
+  initialScenario?: Scenario
+  initialSelected?: PlanKey
+  initialYours?: YourPlan | null
+  /** Reopen a saved plan (location, crops, priorities): handled by the planner. */
+  onOpenSaved?: (s: SavedStrategy) => void
   terrain: Terrain | null
   terrainError: string | null
   frames: Frame[]
@@ -239,16 +251,18 @@ export default function DecisionTool(props: {
   const [field, setField] = useState<FieldInput>(props.initialField)
   const [current, setCurrent] = useState<Slots>(props.initialCurrent)
   const [priorities, setPriorities] = useState<Priorities>(props.initialPriorities ?? DEFAULT_PRIORITIES)
-  const [scenario, setScenario] = useState<Scenario>(DEFAULT_SCENARIO)
-  const [selectedKey, setSelectedKey] = useState<PlanKey>('best')
+  const [scenario, setScenario] = useState<Scenario>(props.initialScenario ?? DEFAULT_SCENARIO)
+  const [selectedKey, setSelectedKey] = useState<PlanKey>(props.initialSelected ?? 'best')
   /** The farmer's own plan, made by allowing a change the helper proposed. */
-  const [yours, setYours] = useState<YourPlan | null>(null)
+  const [yours, setYours] = useState<YourPlan | null>(props.initialYours ?? null)
   const [yoursEval, setYoursEval] = useState<{ plan: YourPlan; input: EngineInput; ev: SlotEvaluation } | null>(null)
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentRequest, setAgentRequest] = useState<AgentRequest | null>(null)
   const [layer, setLayer] = useState<TerrainLayer>('erosion')
   const [showDetails, setShowDetails] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const detailsRef = useRef<HTMLDivElement>(null)
+  const farm = useProfile()
 
   // Slope and elevation at the field come from the SRTM terrain once it has loaded.
   const syncedTerrain = useRef<Terrain | null>(null)
@@ -342,10 +356,33 @@ export default function DecisionTool(props: {
             setLayer(layerKey)
             return terrain ? null : 'The 3D view is still loading; the plan is selected and will show when it is ready.'
           },
+          farmer: farm.profile ? { username: farm.profile.username, memories: farm.memories, strategies: farm.strategies } : null,
+          remember: async (fact) => {
+            await farm.addMemory(fact, 'helper')
+          },
         }
       : null
-  }, [result, input, evaluate, terrain, selected?.key, yours])
+  }, [result, input, evaluate, terrain, selected?.key, yours, farm])
   const getAgentContext = useCallback(() => agentContext.current, [])
+
+  /** Snapshot of the plan on the card for saving or the PDF (null while it is being recomputed). */
+  const getPayload = () => {
+    if (!result || !selected?.metrics || running || yoursStale) return null
+    const card = selected.key === 'yours' ? (mine?.ev.card ?? null) : (strategies.find((s) => s.type === selected.key)?.card ?? null)
+    return buildPayload({
+      input,
+      result,
+      plan: {
+        key: selected.key,
+        slots: selected.slots,
+        metrics: selected.metrics,
+        problems: selected.problems,
+        card,
+        fromKey: selected.key === 'yours' && yours ? yours.from : undefined,
+        edits: selected.edits,
+      },
+    })
+  }
 
   const reviewPlan = (key: PlanKey) => {
     setAgentOpen(true)
@@ -370,6 +407,7 @@ export default function DecisionTool(props: {
             <span className="muted small">{field.name}</span>
           </div>
         </div>
+        <ProfileButton onClick={() => setProfileOpen((v) => !v)} />
         {/* paper button, styled like the "back" one next to it (.home-btn) */}
         <button type="button" className="home-btn bar-change" onClick={onChangeLocation}>
           <img src={changeFieldImg} alt="Change field" />
@@ -436,6 +474,7 @@ export default function DecisionTool(props: {
                         }
                       : undefined
                   }
+                  extra={<PlanSaveBar getPayload={getPayload} disabled={running || yoursStale || !selected.metrics} onNeedSignIn={() => setProfileOpen(true)} />}
                 />
                 <div className="choice-tiles choice-tiles--side" role="group" aria-label="Pick a way to plant">
                   {plans.map((p) => (
@@ -454,6 +493,18 @@ export default function DecisionTool(props: {
         </div>
       )}
 
+      <ProfilePanel
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        onOpenSaved={
+          props.onOpenSaved
+            ? (s) => {
+                setProfileOpen(false)
+                props.onOpenSaved?.(s)
+              }
+            : undefined
+        }
+      />
       {result && selected && (
         <AgentPanel getContext={getAgentContext} open={agentOpen} onOpenChange={setAgentOpen} viewingTitle={PLAIN_TITLE[selected.key]} request={agentRequest} />
       )}

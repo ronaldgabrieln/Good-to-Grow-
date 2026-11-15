@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { checkAnswer, type Ledger } from '../agent/grounding'
 import type { AgentContext } from '../agent/toolHandlers'
-import { useAgent, type ChatProposal, type ChatTurn } from '../agent/useAgent'
+import { useAgent, type ChatMemory, type ChatProposal, type ChatTurn } from '../agent/useAgent'
 import { plainStats } from './plans'
 import smallAgentImg from '../assets/small_agent.svg'
 import bigAgentImg from '../assets/big_agent.svg'
@@ -101,6 +101,31 @@ function ProposalCard({ p, onDecide }: { p: ChatProposal; onDecide: (allowed: bo
   )
 }
 
+/** A fact the helper wants to remember about the farm: Allow / Deny. */
+function MemoryCard({ m, onDecide }: { m: ChatMemory; onDecide: (allowed: boolean) => void }) {
+  return (
+    <div className={`proposal memory-card is-${m.status}`} role="group" aria-label="The helper wants to remember something">
+      <p className="proposal-kicker">The helper wants to remember</p>
+      <p className="proposal-title">“{m.fact}”</p>
+      <p className="proposal-reason">Saved to your profile so it can use it next time. You can delete it any time under your profile.</p>
+      {m.status === 'pending' ? (
+        <div className="proposal-actions">
+          <button type="button" className="btn proposal-allow" onClick={() => onDecide(true)}>
+            Allow
+          </button>
+          <button type="button" className="btn btn-quiet proposal-deny" onClick={() => onDecide(false)}>
+            Deny
+          </button>
+        </div>
+      ) : (
+        <p className="proposal-done">{m.status === 'allowed' ? '✓ Allowed. It is saved in your profile.' : '✕ Denied. Nothing was saved.'}</p>
+      )}
+    </div>
+  )
+}
+
+type Card = { kind: 'change'; p: ChatProposal; textAt: number; id: string } | { kind: 'memory'; m: ChatMemory; textAt: number; id: string }
+
 function AssistantTurn({ turn, onDecide }: { turn: ChatTurn; onDecide: (id: string, allowed: boolean) => void }) {
   const done = turn.status === 'done'
   const ledger = done ? (turn.ledger ?? null) : null
@@ -120,19 +145,26 @@ function AssistantTurn({ turn, onDecide }: { turn: ChatTurn; onDecide: (id: stri
           </ul>
         </details>
       )}
-      {!turn.text && turn.status === 'working' && !turn.proposals?.length && <p className="msg-thinking">Thinking…</p>}
-      {/* Text and proposal cards in the order they came: text before the proposal, the card, text after. */}
-      {[...(turn.proposals ?? []), null].map((p, i, all) => {
+      {!turn.text && turn.status === 'working' && !turn.proposals?.length && !turn.memories?.length && <p className="msg-thinking">Thinking…</p>}
+      {/* Text and cards (plan changes, memory) in the order they came: text before a card, the card, text after. */}
+      {[
+        ...[
+          ...(turn.proposals ?? []).map((p): Card => ({ kind: 'change', p, textAt: p.textAt, id: p.id })),
+          ...(turn.memories ?? []).map((m): Card => ({ kind: 'memory', m, textAt: m.textAt, id: m.id })),
+        ].sort((a, b) => a.textAt - b.textAt),
+        null,
+      ].map((c, i, all) => {
         const from = i === 0 ? 0 : (all[i - 1]?.textAt ?? 0)
-        const part = turn.text.slice(from, p ? p.textAt : undefined).trim()
+        const part = turn.text.slice(from, c ? c.textAt : undefined).trim()
         return (
-          <div key={p?.id ?? 'end'}>
+          <div key={c?.id ?? 'end'}>
             {part && (
               <div className="msg-text">
                 <Formatted text={part} ledger={ledger} />
               </div>
             )}
-            {p && <ProposalCard p={p} onDecide={(allowed) => onDecide(p.id, allowed)} />}
+            {c?.kind === 'change' && <ProposalCard p={c.p} onDecide={(allowed) => onDecide(c.id, allowed)} />}
+            {c?.kind === 'memory' && <MemoryCard m={c.m} onDecide={(allowed) => onDecide(c.id, allowed)} />}
           </div>
         )
       })}
@@ -271,7 +303,7 @@ export function AgentPanel(props: {
               value={draft}
               rows={2}
               maxLength={1000}
-              placeholder={waitingForYou ? 'Allow or deny the change above first…' : 'Ask a question… / Escribe tu pregunta…'}
+              placeholder={waitingForYou ? 'Allow or deny the card above first…' : 'Ask a question… / Escribe tu pregunta…'}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
