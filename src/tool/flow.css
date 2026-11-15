@@ -356,3 +356,15 @@
 @media (max-width: 520px) {
   .crops-card { padding: 26px 16px 18px; rotate: 0deg; }
 }
+
+/* ───────── "What matters to you?" (sliders after the crop question) ───────── */
+.prio-card { width: min(520px, 100%); }
+.prio-slider { display: block; margin-bottom: 12px; }
+.prio-head { display: flex; justify-content: space-between; gap: 10px; font-size: 15.5px; color: var(--navy); }
+.prio-value { color: var(--navy-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+.prio-slider input { width: 100%; margin: 4px 0 0; accent-color: var(--green); }
+.prio-slider input:focus-visible { outline: 3px dashed var(--green); outline-offset: 3px; }
+.prio-reset { display: block; margin: 14px auto 0; padding: 6px 16px; border: 2px solid var(--navy); border-radius: 999px; background: #fff; color: var(--navy); font: 700 15px/1.2 inherit; font-family: inherit; cursor: pointer; transition: transform 0.12s; }
+.prio-reset:hover:not(:disabled) { transform: rotate(-1deg); }
+.prio-reset:disabled { opacity: 0.45; cursor: default; }
+.prio-reset:focus-visible { outline: 3px dashed var(--green); outline-offset: 3px; }

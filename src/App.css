@@ -37,10 +37,35 @@
   -webkit-user-drag: none;
 }
 
-/* Transitions only run while switching views (see App.tsx) */
-.scene:not(.is-animating) *,
-.scene:not(.is-animating) *::before {
+/* View-change transitions only run while switching views (see App.tsx).
+   Only the elements that move between views are listed, so the buttons'
+   hover effect (on their inner <img>) keeps working. */
+.scene:not(.is-animating)
+  :is(.frame, .logo, .paper-btn, .footer, .story-text, .story-heart, .story-doodle, .back-btn) {
   transition: none !important;
+}
+
+/* Hover: the paper buttons rise a little and cast a softer shadow. The
+   <img> moves (not the link), so it never fights the view transitions. */
+.paper-btn img,
+.back-btn img {
+  transition:
+    translate 0.25s var(--ease-out),
+    filter 0.25s var(--ease-out);
+}
+
+@media (hover: hover) {
+  .paper-btn:hover img,
+  .back-btn:hover img {
+    translate: 0 -5%;
+    filter: drop-shadow(0 6px 6px rgb(0 0 0 / 0.16));
+  }
+}
+
+.paper-btn:focus-visible img,
+.back-btn:focus-visible img {
+  translate: 0 -5%;
+  filter: drop-shadow(0 6px 6px rgb(0 0 0 / 0.16));
 }
 
 /* ---------- The painting frame (shared by both views) ---------- */
@@ -123,7 +148,7 @@
 .story-text {
   position: absolute;
   left: calc(var(--img-x) + var(--img-w) * 0.80);
-  top: calc(var(--img-y) + var(--img-h) * 0.231);
+  top: calc(var(--img-y) + var(--img-h) * 0.2);
   width: calc(var(--img-w) * 0.872) !important;
 }
 
