@@ -4,9 +4,9 @@ import Planner from './tool/Planner'
 
 // SVGs live in public/ (served as-is from the site root).
 const landingAsset = (name: string) =>
-  `/landing assets/${encodeURIComponent(name)}`
+  `/landing_assets/${encodeURIComponent(name)}`
 const storyAsset = (name: string) =>
-  `/our story assets/${encodeURIComponent(name)}`
+  `/our_story_assets/${encodeURIComponent(name)}`
 
 type View = 'landing' | 'story' | 'planner'
 
