@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import Planner from './tool/Planner'
+import homeImg from './assets/home.svg'
 
 // SVGs live in public/ (served as-is from the site root).
 const landingAsset = (name: string) =>
@@ -91,7 +92,7 @@ function App() {
         <img className="story-heart" src={storyAsset('heart.svg')} alt="" />
         <img className="story-doodle" src={storyAsset('doodle.svg')} alt="" />
         <a className="back-btn" href="#">
-          <img src={storyAsset('back.svg')} alt="back" />
+          <img src={homeImg} alt="home" />
         </a>
       </section>
     </main>

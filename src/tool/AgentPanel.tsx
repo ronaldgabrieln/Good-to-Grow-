@@ -3,6 +3,8 @@ import { checkAnswer, type Ledger } from '../agent/grounding'
 import type { AgentContext } from '../agent/toolHandlers'
 import { useAgent, type ChatProposal, type ChatTurn } from '../agent/useAgent'
 import { plainStats } from './plans'
+import smallAgentImg from '../assets/small_agent.svg'
+import bigAgentImg from '../assets/big_agent.svg'
 
 const STARTERS = [
   '¿Por qué me recomiendas este plan?',
@@ -202,13 +204,17 @@ export function AgentPanel(props: {
     <>
       {!open && (
         <button type="button" className="agent-fab" onClick={() => setOpen(true)}>
-          Ask about your plan
-          <span>Pregunta sobre tu plan</span>
+          <img className="agent-fab-logo" src={smallAgentImg} alt="" />
+          <span className="agent-fab-text">
+            Ask about your plan
+            <span>Pregunta sobre tu plan</span>
+          </span>
         </button>
       )}
       {open && (
         <aside className="agent" aria-label="Ask about your plan">
           <header className="agent-head">
+            <img className="agent-head-logo" src={bigAgentImg} alt="" />
             <div>
               <h2>Ask about your plan</h2>
               <p className="agent-about">

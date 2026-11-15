@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   CROP_BY_ID,
   DEFAULT_PRIORITIES,
@@ -34,7 +34,14 @@ import type { Terrain } from './terrain/terrain'
 import { useEngine } from './useEngine'
 import { useEvaluator } from './useEvaluator'
 import './tool.css'
-import changeFieldImg from '../assets/Hello (9).svg'
+import changeFieldImg from '../assets/change_field.svg'
+import iconBalanced from '../assets/a_bit_of_everything.svg'
+import iconWater from '../assets/save_water.svg'
+import iconIncome from '../assets/earn_more.svg'
+import iconSoil from '../assets/healthier_soil.svg'
+import iconCurrent from '../assets/what_you_do_now.svg'
+import iconBest from '../assets/best_for_you.svg'
+import iconDifferent from '../assets/another_way.svg'
 
 type GoalKey = 'balanced' | 'water' | 'income' | 'soil'
 const GOALS: { key: GoalKey; label: string; priorities: Priorities }[] = [
@@ -58,7 +65,37 @@ interface PlanView {
   edits?: string[]
 }
 
-/** Hand-drawn little glyphs for the tiles (stroke only, drawn in white on the tile). */
+/**
+ * Hand-drawn sticker icons for the tiles (src/assets, named after each tile).
+ * The drawings are not centered inside their SVGs, so each one carries where its drawing sits
+ * (measured from the file): canvas w/h, drawing center cx/cy and drawing size fw/fh as fractions.
+ */
+type Sticker = { src: string; w: number; h: number; cx: number; cy: number; fw: number; fh: number }
+const TILE_STICKERS: Partial<Record<PlanKey | GoalKey, Sticker>> = {
+  balanced: { src: iconBalanced, w: 495, h: 591, cx: 0.54, cy: 0.581, fw: 0.77, fh: 0.66 },
+  water: { src: iconWater, w: 354, h: 456, cx: 0.532, cy: 0.52, fw: 0.57, fh: 0.71 },
+  income: { src: iconIncome, w: 432, h: 456, cx: 0.543, cy: 0.59, fw: 0.67, fh: 0.82 },
+  soil: { src: iconSoil, w: 522, h: 519, cx: 0.443, cy: 0.546, fw: 0.88, fh: 0.81 },
+  current: { src: iconCurrent, w: 537, h: 474, cx: 0.52, cy: 0.489, fw: 0.75, fh: 0.58 },
+  best: { src: iconBest, w: 435, h: 414, cx: 0.517, cy: 0.473, fw: 0.71, fh: 0.77 },
+  different: { src: iconDifferent, w: 543, h: 495, cx: 0.494, cy: 0.507, fw: 0.63, fh: 0.75 },
+}
+
+/** Places a sticker so its drawing (not its canvas) fills and is centered in the square. */
+function stickerStyle(s: Sticker): CSSProperties {
+  const aspect = (s.fw * s.w) / (s.fh * s.h) // drawing width / height
+  const drawW = aspect >= 1 ? 1 : aspect // drawing size as a fraction of the square
+  const imgW = drawW / s.fw
+  const imgH = (imgW * s.h) / s.w
+  return {
+    width: `${imgW * 100}%`,
+    height: `${imgH * 100}%`,
+    left: `${(0.5 - s.cx * imgW) * 100}%`,
+    top: `${(0.5 - s.cy * imgH) * 100}%`,
+  }
+}
+
+/** Tiles without a sticker yet keep a little glyph, drawn in white on a colored square. */
 function TileIcon({ type }: { type: PlanKey | GoalKey }) {
   const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 3.2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
   return (
@@ -159,6 +196,7 @@ function OptionHero(props: { plan: PlanView; base: RotationMetrics | null; curre
 }
 
 function Tile(props: { kind: PlanKey | GoalKey; label: string; selected: boolean; onSelect: () => void; radio?: boolean }) {
+  const sticker = TILE_STICKERS[props.kind]
   return (
     <button
       type="button"
@@ -168,9 +206,17 @@ function Tile(props: { kind: PlanKey | GoalKey; label: string; selected: boolean
       aria-checked={props.radio ? props.selected : undefined}
       onClick={props.onSelect}
     >
-      <span className="choice-tile-icon">
-        <TileIcon type={props.kind} />
-      </span>
+      {sticker ? (
+        <span className="choice-tile-icon is-sticker">
+          <span className="sticker-box">
+            <img src={sticker.src} alt="" style={stickerStyle(sticker)} />
+          </span>
+        </span>
+      ) : (
+        <span className="choice-tile-icon">
+          <TileIcon type={props.kind} />
+        </span>
+      )}
       <span className="choice-tile-label">{props.label}</span>
     </button>
   )
@@ -318,7 +364,7 @@ export default function DecisionTool(props: {
     <div className="tool">
       <header className="tool-bar">
         <div className="tool-brand">
-          <BrandLogo />
+          <BrandLogo onHome={props.onHome} />
           <div>
             <h1>Your farm</h1>
             <span className="muted small">{field.name}</span>
