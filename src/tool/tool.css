@@ -575,8 +575,10 @@
   .agent-fab { right: 12px; bottom: 12px; font-size: 19px; }
 }
 
-/* ═════════ "What should you plant next?" card: a big hero on top, round tiles below ═════════ */
+/* ═════════ "What should you plant next?" card: the big hero, with the round option tiles in a column on its right ═════════ */
 .choice-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 108px;
   border-radius: 30px;
   background: var(--surface);
   box-shadow: var(--paper-shadow);
@@ -611,13 +613,13 @@
 .choice-hero .season-strip .ss { background: rgba(255, 253, 248, 0.9); }
 .choice-hero .option-ext { margin: 0; font-size: 14.5px; background: rgba(255, 253, 248, 0.7); }
 
-.choice-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 16px 14px 18px; }
-.tile {
+.choice-tiles { display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 18px 10px; }
+.choice-tile {
   --tile: var(--text-2);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   padding: 0;
   border: 0;
   background: none;
@@ -625,14 +627,14 @@
   cursor: pointer;
   font: inherit;
 }
-.tile-current { --tile: #6f8798; }
-.tile-small-change { --tile: #5fa27f; }
-.tile-best { --tile: var(--accent); }
-.tile-different { --tile: #c8693f; }
-.tile-icon {
+.choice-tile-current { --tile: #6f8798; }
+.choice-tile-small-change { --tile: #5fa27f; }
+.choice-tile-best { --tile: var(--accent); }
+.choice-tile-different { --tile: #c8693f; }
+.choice-tile-icon {
   display: block;
   width: 100%;
-  max-width: 88px;
+  max-width: 66px;
   aspect-ratio: 1;
   padding: 24%;
   border-radius: 30%;
@@ -643,12 +645,48 @@
   box-shadow: 0 3px 0 rgba(36, 66, 90, 0.14);
   transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s, filter 0.18s, box-shadow 0.18s;
 }
-.tile-label { font: 700 17px/1.05 var(--hand); text-align: center; text-wrap: balance; }
-.tile.is-on { color: var(--text); }
-.tile.is-on .tile-icon { opacity: 1; filter: none; transform: translateY(-3px); box-shadow: 0 6px 0 rgba(36, 66, 90, 0.2); }
-@media (hover: hover) { .tile:not(.is-on):hover .tile-icon { opacity: 0.85; filter: none; transform: translateY(-2px); } }
-.tile:focus-visible { outline: 3px dashed var(--accent); outline-offset: 4px; border-radius: 12px; }
+.choice-tile-label { font: 700 16px/1.05 var(--hand); text-align: center; text-wrap: balance; }
+.choice-tile.is-on { color: var(--text); }
+.choice-tile.is-on .choice-tile-icon { opacity: 1; filter: none; transform: translateY(-3px); box-shadow: 0 6px 0 rgba(36, 66, 90, 0.2); }
+@media (hover: hover) { .choice-tile:not(.is-on):hover .choice-tile-icon { opacity: 0.85; filter: none; transform: translateY(-2px); } }
+.choice-tile:focus-visible { outline: 3px dashed var(--accent); outline-offset: 4px; border-radius: 12px; }
+/* Phones: not enough width for a side column, so the tiles go back to a row under the hero */
 @media (max-width: 520px) {
-  .choice-tiles { gap: 6px; padding: 14px 8px 16px; }
-  .tile-label { font-size: 15px; }
+  .choice-card { grid-template-columns: 1fr; }
+  .choice-tiles { flex-direction: row; justify-content: space-between; gap: 6px; padding: 14px 8px 16px; }
+  .choice-tile { flex: 1; min-width: 0; }
+  .choice-tile-label { font-size: 15px; }
 }
+
+/* ═════════ 3-year plan as a ring (inside the choice hero) ═════════ */
+.ring { position: relative; width: 100%; max-width: 440px; margin: 0 auto; container-type: inline-size; }
+.ring-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.ring-seg { cursor: pointer; outline: none; transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s, filter 0.2s; }
+.ring-svg.has-lit .ring-seg:not(.is-lit) { opacity: 0.45; }
+.ring-seg.is-lit { transform: translate(var(--dx), var(--dy)); filter: brightness(1.08) drop-shadow(0 4px 6px rgba(36, 66, 90, 0.28)); }
+.ring-seg:focus-visible path { stroke-dasharray: 6 5; stroke: var(--text); }
+.ring-name { font: 800 13px/1 var(--body); fill: var(--text); pointer-events: none; }
+.ring-name.on-dark { fill: #fff; }
+.ring-seg.is-bare .ring-name { fill: var(--text-3); font-weight: 700; }
+.ring-label { pointer-events: none; }
+.ring-season { font: 700 13px var(--body); fill: var(--text-2); }
+.ring-year { font: 700 21px var(--hand); }
+.ring-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 36%; /* inner circle is 40% of the viewBox */
+  translate: -50% -50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  text-align: center;
+  font-size: clamp(10px, 2.9cqw, 13px);
+  line-height: 1.25;
+  color: var(--text-2);
+  pointer-events: none;
+}
+.ring-center strong { font: 700 clamp(18px, 6cqw, 26px)/1.05 var(--hand); color: var(--text); overflow-wrap: anywhere; }
+.ring-center em { margin-top: 2px; font-style: normal; font-weight: 800; color: var(--accent); }
+.ring-when { font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.85em; color: var(--text-3); }

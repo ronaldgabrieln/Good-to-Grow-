@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  CROP_BY_ID,
   DEFAULT_PRIORITIES,
   DEFAULT_SCENARIO,
   SOURCES,
@@ -26,6 +25,7 @@ import { FieldFromSpace } from './FieldFromSpace'
 import { fmt } from './format'
 import type { Frame } from './landsatFrames'
 import { RotationCalendar } from './RotationCalendar'
+import { RotationRing } from './RotationRing'
 import { StrategyCardView } from './StrategyCardView'
 import { Terrain3D, type TerrainLayer } from './terrain/Terrain3D'
 import type { Terrain } from './terrain/terrain'
@@ -49,7 +49,6 @@ const GOALS: { key: string; label: string; priorities: Priorities }[] = [
 ]
 
 const pct = (a: number, b: number) => (b === 0 ? 0 : ((a - b) / Math.abs(b)) * 100)
-const short = (id: string) => CROP_BY_ID[id].name.replace(/ \(.*\)$/, '')
 
 interface Stat {
   label: string
@@ -89,24 +88,6 @@ function plainStats(m: RotationMetrics, base: RotationMetrics | null): Stat[] {
   ]
 }
 
-function SeasonStrip({ slots }: { slots: Slots }) {
-  return (
-    <ol className="season-strip" aria-label="Three years, spring and fall">
-      {slots.map((id, i) => {
-        const kind = id ? CROP_BY_ID[id].kind : 'empty'
-        return (
-          <li key={i} className={`ss ss-${kind}`}>
-            <span className="ss-when">
-              Y{Math.floor(i / 2) + 1} {i % 2 === 0 ? 'spring' : 'fall'}
-            </span>
-            {id ? short(id) : 'bare'}
-          </li>
-        )
-      })}
-    </ol>
-  )
-}
-
 /** Hand-drawn little glyphs for the option tiles (stroke only, drawn in white on the tile). */
 function TileIcon({ type }: { type: StrategyType }) {
   const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 3.2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
@@ -139,7 +120,7 @@ function TileIcon({ type }: { type: StrategyType }) {
 }
 
 /** The big top half of the card: what the picked option is, and why. */
-function OptionHero(props: { s: Strategy; base: RotationMetrics | null }) {
+function OptionHero(props: { s: Strategy; base: RotationMetrics | null; current?: Slots }) {
   const { s } = props
   const isCurrent = s.type === 'current'
   const stats = isCurrent ? [] : plainStats(s.metrics, props.base)
@@ -153,7 +134,7 @@ function OptionHero(props: { s: Strategy; base: RotationMetrics | null }) {
         <span className="hero-pill hero-pill--title">{PLAIN_TITLE[s.type]}</span>
         <span className="hero-pill">Shown on the land</span>
       </div>
-      <SeasonStrip slots={s.rotation.slots} />
+      <RotationRing slots={s.rotation.slots} current={isCurrent ? undefined : props.current} />
       {stats.length > 0 && (
         <ul className="hero-stats">
           {stats.map((st) => (
@@ -168,18 +149,18 @@ function OptionHero(props: { s: Strategy; base: RotationMetrics | null }) {
         </ul>
       )}
       {reason && <p className="hero-reason">{reason}</p>}
-      {!isCurrent && <p className="option-ext">{s.card.extension}</p>}
+      {/* "Talk to your extension agent" note hidden for now; the text is still in s.card.extension */}
     </div>
   )
 }
 
 function OptionTile(props: { s: Strategy; selected: boolean; onSelect: () => void }) {
   return (
-    <button type="button" className={`tile tile-${props.s.type} ${props.selected ? 'is-on' : ''}`} aria-pressed={props.selected} onClick={props.onSelect}>
-      <span className="tile-icon">
+    <button type="button" className={`choice-tile choice-tile-${props.s.type} ${props.selected ? 'is-on' : ''}`} aria-pressed={props.selected} onClick={props.onSelect}>
+      <span className="choice-tile-icon">
         <TileIcon type={props.s.type} />
       </span>
-      <span className="tile-label">{PLAIN_TITLE[props.s.type]}</span>
+      <span className="choice-tile-label">{PLAIN_TITLE[props.s.type]}</span>
     </button>
   )
 }
@@ -322,7 +303,7 @@ export default function DecisionTool(props: {
             </div>
             {selected && (
               <div className={`choice-card ${running ? 'is-stale' : ''}`}>
-                <OptionHero s={selected} base={base} />
+                <OptionHero s={selected} base={base} current={current} />
                 <div className="choice-tiles" role="group" aria-label="Pick a way to plant">
                   {strategies.map((s) => (
                     <OptionTile key={s.type} s={s} selected={selected === s} onSelect={() => setSelectedType(s.type)} />
