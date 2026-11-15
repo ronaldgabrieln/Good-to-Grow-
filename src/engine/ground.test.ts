@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { fitDrainage, parseNodeCsv, summarizeGround } from './ground'
+import { fitDrainage, parseNodeCsv, pctOfCapacity, summarizeGround } from './ground'
 
 const csv = readFileSync(path.join(__dirname, '..', '..', 'public', 'data', 'ground', 'node-2026-11-15.csv'), 'utf8')
 
@@ -29,6 +29,9 @@ describe('field node ground truth', () => {
     expect(g.maxGapMin).toBeLessThan(1)
     expect(g.rawEnd).toBeLessThan(g.rawStart)
     expect(g.fit).not.toBeNull()
-    console.log(JSON.stringify({ ...g, series: g.series.length, hourly: g.hourly.map((h) => Math.round(h.raw)) }))
+    expect(g.fit!.t0).toBe(g.peakMs)
+    expect(g.peakRaw).toBe(Math.max(...g.series.map((p) => p.raw)))
+    expect(pctOfCapacity(g.peakRaw, g.peakRaw)).toBe(100)
+    expect(pctOfCapacity(g.rawEnd, g.peakRaw)).toBeLessThan(100)
   })
 })

@@ -12,11 +12,11 @@
 .picker {
   position: fixed;
   inset: 0;
-  background: #dfe9e3;
+  background: #c4d8cd;
   --paper: #fffdf8;
   --navy: #24425a;
   --navy-2: #4c6173;
-  --green: #2a6b2f;
+  --green: #345e50;
   --hand: 'Gaegu', 'Comic Sans MS', 'Segoe Print', cursive;
   font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--navy);
@@ -50,7 +50,8 @@
   padding: 14px 18px 16px;
   rotate: -0.6deg;
 }
-.picker-logo { display: block; width: 210px; max-width: 70%; height: auto; margin: 0 0 4px -4px; }
+.picker-logo { display: block; width: 210px; max-width: 100%; height: auto; margin: 0 0 4px -4px; }
+.picker-top .brand-home { max-width: 70%; }
 .picker-top h1 { margin: 0 0 2px; font: 700 30px/1.05 var(--hand); color: var(--navy); }
 .picker-top p { margin: 0; color: var(--navy-2); font-size: 14.5px; }
 .picker-locate {
@@ -271,7 +272,7 @@
   --paper-2: #f4f1e8;
   --navy: #24425a;
   --navy-2: #4c6173;
-  --green: #2a6b2f;
+  --green: #345e50;
   --line: #e4dfd1;
   --hand: 'Gaegu', 'Comic Sans MS', 'Segoe Print', cursive;
 }
@@ -313,7 +314,7 @@
   font-size: 17px;
 }
 .crops-search input::placeholder { color: rgba(36, 66, 90, 0.45); }
-.crops-search input:focus-visible { outline: 3px solid rgba(42, 107, 47, 0.35); outline-offset: 2px; border-color: var(--green); }
+.crops-search input:focus-visible { outline: 3px solid rgba(52, 94, 80, 0.35); outline-offset: 2px; border-color: var(--green); }
 .crops-search svg { position: absolute; right: 16px; top: 50%; translate: 0 -50%; pointer-events: none; }
 .crops-results { list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 0; margin: 14px 0 0; animation: crops-fade 0.2s ease-out both; }
 @keyframes crops-fade { from { opacity: 0; transform: translateY(-4px); } }

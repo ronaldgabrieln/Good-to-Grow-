@@ -178,7 +178,8 @@
   position: absolute;
   right: 3.1vw;
   top: calc(var(--img-y) + var(--img-h) * 0.973);
-  width: calc(var(--img-w) * 0.2);
+  /* home.svg is a bit wider than the old back.svg (123 vs 113.25): same height */
+  width: calc(var(--img-w) * 0.2 * 123 / 113.25);
 }
 
 /* ==========================================================================
@@ -377,6 +378,6 @@
     top: auto;
     bottom: 5vh;
     right: 6vw;
-    width: 30vw;
+    width: calc(30vw * 123 / 113.25);
   }
 }

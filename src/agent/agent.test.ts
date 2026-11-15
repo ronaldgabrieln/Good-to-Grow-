@@ -2,12 +2,14 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CURRENT, DEFAULT_FIELD, DEFAULT_PRIORITIES, DEFAULT_SCENARIO, evaluateSlots, runEngine, type EngineInput, type FieldData } from '../engine'
+import { parseNodeCsv, summarizeGround } from '../engine/ground'
 import { parseSoilGrids } from '../engine/soil'
 import type { PowerColumns } from '../engine/weather'
 import { addToLedger, checkAnswer, parseNumber, type Ledger } from './grounding'
 import { AGENT_TOOLS } from './toolDefs'
 import { runTool, type AgentContext, type Proposal } from './toolHandlers'
 import { screenNote } from './useAgent'
+import { buildPayload } from '../profile/snapshot'
 
 const bundle = JSON.parse(readFileSync(path.join(__dirname, '..', '..', 'public', 'data', 'maneadero-demo.json'), 'utf8')) as {
   power: PowerColumns
@@ -164,10 +166,76 @@ describe('tools on the Maneadero demo field', () => {
     expect(screenNote(withPlan)).toMatch(/looking at "Your plan".*edited from "Best for you"/)
   })
 
+  it('recall_farmer reads the saved profile, and says so when nobody is signed in', async () => {
+    const out = await call('recall_farmer', {})
+    expect(out.json.signed_in).toBe(false)
+    expect(screenNote(ctx)).toMatch(/Nobody is signed in/)
+
+    const best = result.strategies.find((s) => s.type === 'best')!
+    const base = result.strategies.find((s) => s.type === 'current')!.metrics
+    const payload = buildPayload({ input, result, plan: { key: 'best', slots: best.rotation.slots, metrics: best.metrics, problems: [], card: best.card } })
+    const saved = { id: 's1', profile_id: 'p1', title: 'Best for you · Maneadero', plan_key: 'best', field_name: 'Maneadero', lat: 31.69, lon: -116.57, payload, created_at: '2026-11-14T10:00:00Z' }
+    const signedIn: AgentContext = { ...ctx, farmer: { username: 'rancho-demo', memories: [{ fact: 'Will not grow strawberries.', created_at: '2026-11-10T09:00:00Z' }], strategies: [saved] } }
+    expect(screenNote(signedIn)).toMatch(/Signed in as "rancho-demo".*recall_farmer/)
+    const r = JSON.parse((await runTool('recall_farmer', {}, signedIn)).content)
+    expect(r.remembered_facts).toEqual([{ fact: 'Will not grow strawberries.', saved_on: '2026-11-10' }])
+    expect(r.saved_plans[0].plan).toBe('Best for you')
+    expect(r.saved_plans[0].figures_when_saved.irrigation_mm_per_year).toBe(Math.round(best.metrics.waterMm))
+    expect(r.saved_plans[0].change_versus_current_rotation_when_saved.irrigation_change_pct).toBe(Math.round(((best.metrics.waterMm - base.waterMm) / base.waterMm) * 100))
+  })
+
+  it('propose_memory saves only after the farmer allows it', async () => {
+    const saved: string[] = []
+    const farmer = { username: 'rancho-demo', memories: [{ fact: 'Will not grow strawberries.', created_at: '2026-11-10T09:00:00Z' }], strategies: [] }
+    const withMemory = (answer: boolean): AgentContext => ({
+      ...ctx,
+      farmer,
+      remember: async (f) => {
+        saved.push(f)
+      },
+      requestMemoryApproval: async () => answer,
+    })
+    const no = JSON.parse((await runTool('propose_memory', { fact: 'Well water tested 2.1 dS/m.' }, withMemory(false))).content)
+    expect(no.decision).toBe('denied')
+    expect(saved).toEqual([])
+    const yes = JSON.parse((await runTool('propose_memory', { fact: '  Well water tested   2.1 dS/m. ' }, withMemory(true))).content)
+    expect(yes.decision).toBe('allowed')
+    expect(saved).toEqual(['Well water tested 2.1 dS/m.'])
+    // Already remembered, not signed in, or no approval channel: an error result, nothing saved.
+    expect((await runTool('propose_memory', { fact: 'will not grow strawberries.' }, withMemory(true))).isError).toBe(true)
+    expect((await runTool('propose_memory', { fact: 'Uses drip irrigation.' }, ctx)).isError).toBe(true)
+    expect((await runTool('propose_memory', { fact: 'Uses drip irrigation.' }, { ...ctx, farmer })).isError).toBe(true)
+    expect(saved).toHaveLength(1)
+  })
+
   it('rejects bad input as an error result instead of guessing', async () => {
     expect((await call('evaluate_rotation', { slots: ['tomato'] })).isError).toBe(true)
     expect((await call('crop_info', { crop: 'unicorn' })).isError).toBe(true)
     expect((await call('test_climate', { target: { option: 'best', slots: [] }, warmer_c: 9, rain_change_pct: 0 })).isError).toBe(true)
     expect((await call('nope', {})).isError).toBe(true)
+  })
+})
+
+describe('get_ground_readings (field sensor node)', () => {
+  const csv = readFileSync(path.join(__dirname, '..', '..', 'public', 'data', 'ground', 'node-2026-11-15.csv'), 'utf8')
+  const summary = summarizeGround(parseNodeCsv(csv))
+
+  it('says plainly when no readings are loaded', async () => {
+    const out = await runTool('get_ground_readings', {}, { ...ctx, ground: null })
+    expect(JSON.parse(out.content).available).toBe(false)
+  })
+
+  it('returns the measured night with checkable figures', async () => {
+    const out = await runTool('get_ground_readings', {}, { ...ctx, ground: { summary, label: 'night of 14–15 Nov 2026', capacity: null } })
+    const json = JSON.parse(out.content)
+    expect(out.isError).toBe(false)
+    expect(json.available).toBe(true)
+    expect(json.field_capacity_confirmed).toBe(true)
+    expect(json.temperature_measured).toBe(false)
+    const ledger: Ledger = []
+    addToLedger(ledger, out.content)
+    expect(json.soil_water_at_this_recordings_peak_pct_of_highest_peak).toBe(100)
+    const answer = `Your soil went from 100% to ${json.soil_water_now_pct_of_highest_peak}% of its highest peak in ${json.hours_since_this_recordings_peak} hours.`
+    expect(checkAnswer(answer, ledger).unverified).toEqual([])
   })
 })

@@ -49,6 +49,13 @@ export const AGENT_TOOLS: Anthropic.Beta.BetaTool[] = [
     strict: true,
   },
   {
+    name: 'get_ground_readings',
+    description:
+      "Soil moisture measured on the farmer's own field by the GoodToGrow sensor node (a soil probe on an Arduino), as opposed to the satellite and model data: when it was recorded, how wet the soil was at the start and end, how fast it is drying, the field-capacity reading estimated from how the soil drained, the NASA POWER water demand for that month, what the readings mean, and what the sensor did not measure. Call this when the farmer asks how wet their soil is, about their sensor, or about measured (not modeled) data.",
+    input_schema: noInput,
+    strict: true,
+  },
+  {
     name: 'get_options',
     description:
       'The plans on screen: the farmer\'s current rotation, the suggested ones (small change, best, different) and the farmer\'s edited plan ("yours") if there is one, plus which plan the farmer is looking at. For each: crops by season, modeled water, income index, soil, nitrogen, erosion, pest-break and failure-risk figures, the precomputed % change versus the current rotation, why it was suggested, risks, evidence and the extension-agent advice.',
@@ -145,6 +152,30 @@ export const AGENT_TOOLS: Anthropic.Beta.BetaTool[] = [
         reason: { type: 'string', description: 'One short plain sentence, in the language the farmer uses, saying what changes and why.' },
       },
       required: ['base', 'slots', 'reason'],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: 'recall_farmer',
+    description:
+      "Read what is saved about this farmer in their profile: the facts they allowed you to remember and the plans they saved before (with the figures computed when they saved them). Call it once at the start of a conversation when the app note says a farmer is signed in, and whenever the farmer refers to earlier conversations or saved plans ('last time', 'the plan I saved', 'my well'). Returns signed_in false when nobody is signed in.",
+    input_schema: noInput,
+    strict: true,
+  },
+  {
+    name: 'propose_memory',
+    description:
+      "Ask to remember one lasting fact about the farmer or their farm for future conversations, for example a measured well salinity, crops they will not grow, their irrigation equipment or where they sell. The app shows the fact and the farmer taps Allow or Deny; this call returns their decision. Only facts the farmer stated themselves in this conversation; never names, contact details, health, debts or anything they did not say. One fact per call; never say something was remembered unless this returns decision \"allowed\".",
+    input_schema: {
+      type: 'object',
+      properties: {
+        fact: {
+          type: 'string',
+          description: 'The fact as one short sentence in the language the farmer uses, written about the farm, e.g. "Well water tested 2.1 dS/m (farmer, 2026)." or "Will not grow strawberries: no labour for picking."',
+        },
+      },
+      required: ['fact'],
       additionalProperties: false,
     },
     strict: true,

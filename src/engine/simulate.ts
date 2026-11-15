@@ -104,7 +104,52 @@ export function simulatePlanting(ctx: SimContext, cropId: string, season: Season
   return hit
 }
 
-function runPlanting(ctx: SimContext, cropId: string, season: Season, year: number): PlantingSim | null {
+/** One simulated day of a planting (reported only to the optional `onDay` hook). */
+export interface PlantingDay {
+  d: number
+  index: number
+  et0: number
+  kc: number
+  etc: number
+  eta: number
+  rain: number
+  /** Root-zone depletion at the end of the day, mm. */
+  depletion: number
+  /** Readily available water: irrigate (or stress) above this depletion, mm. */
+  raw: number
+  /** Total available water in the current root zone, mm. */
+  taw: number
+  /** Net irrigation applied this day, mm. */
+  irrigation: number
+  rootM: number
+  cover: number
+  tmax: number
+  tmin: number
+  erosionT: number
+}
+
+/**
+ * Re-run one planting with a day-by-day record (behind-the-scenes view). Same math as the cached
+ * simulation; the result is not cached.
+ */
+export function tracePlanting(
+  ctx: SimContext,
+  cropId: string,
+  season: Season,
+  year: number,
+): { sim: PlantingSim; days: PlantingDay[] } | null {
+  const days: PlantingDay[] = []
+  const sim = runPlanting(ctx, cropId, season, year, (day) => days.push(day))
+  return sim ? { sim, days } : null
+}
+
+function runPlanting(
+  ctx: SimContext,
+  cropId: string,
+  season: Season,
+  year: number,
+  onDay?: (day: PlantingDay) => void,
+): PlantingSim | null {
   const { w, soil, field } = ctx
   const c = CROP_BY_ID[cropId]
   const plantDoy = c?.plant[season]
@@ -153,7 +198,9 @@ function runPlanting(ctx: SimContext, cropId: string, season: Season, year: numb
     const p = w.rain[i]
     dr = dr - p + etaDay
     if (dr < 0) dr = 0
+    let irrToday = 0
     if (c.irrigation === 'full' && dr > raw) {
+      irrToday = dr
       irrNet += dr
       dr = 0
     }
@@ -169,7 +216,26 @@ function runPlanting(ctx: SimContext, cropId: string, season: Season, year: numb
       frostDay = isoDate(w, i)
     }
     const cover = c.maxCover * Math.min(1, d / (ini + dev))
-    erosion += dailyErosivity(p) * soil.kFactor * ctx.ls * (1 - 0.9 * cover)
+    const erosionDay = dailyErosivity(p) * soil.kFactor * ctx.ls * (1 - 0.9 * cover)
+    erosion += erosionDay
+    onDay?.({
+      d,
+      index: i,
+      et0: w.et0[i],
+      kc,
+      etc: etcDay,
+      eta: etaDay,
+      rain: p,
+      depletion: dr,
+      raw,
+      taw,
+      irrigation: irrToday,
+      rootM: zr,
+      cover,
+      tmax: w.tmax[i],
+      tmin: w.tmin[i],
+      erosionT: erosionDay,
+    })
   }
 
   const sal = salinityResponse(c, field.wellEcDsM)

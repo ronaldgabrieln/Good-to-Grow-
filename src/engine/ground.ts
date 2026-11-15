@@ -25,6 +25,61 @@ export interface ProbeCalibration {
 /** Calibration done on 2026-11-14: probe in dry air = 0, probe in a glass of water = 631. */
 export const NODE_CALIBRATION: ProbeCalibration = { dry: 0, wet: 631 }
 
+/** Where the probe is: a container (pot) or the open field. Changes how the readings are read. */
+export interface GroundSite {
+  kind: 'pot' | 'field'
+  /** Crop id from crops.ts. */
+  cropId: string
+  soil: string
+  place: string
+  lat: number
+  lon: number
+  container?: {
+    material: 'terracotta' | 'plastic'
+    drainageHoles: boolean
+    topDiameterCm: number
+    soilDepthCm: number
+  }
+  /** What was measured and what was assumed about this site. */
+  notes: string[]
+}
+
+/** The team's test pot (reported 2026-11-15). */
+export const NODE_SITE: GroundSite = {
+  kind: 'pot',
+  cropId: 'basil',
+  soil: 'potting mix blended with garden soil',
+  place: 'Ensenada, B.C.',
+  lat: 31.87,
+  lon: -116.6,
+  container: { material: 'terracotta', drainageHoles: true, topDiameterCm: 25, soilDepthCm: 22 },
+  notes: [
+    'Pot size is approximate (about 25 cm across, 22 cm of soil).',
+    'Terracotta walls are porous: water also evaporates through the sides, so the pot dries faster than plastic or open ground.',
+    'The level the soil drains to is the pot’s container capacity. A pot holds more water than the same soil in the ground (water collects above the drainage holes), so it is not the field capacity of Maneadero soil.',
+  ],
+}
+
+/** Soil surface of a container, m² (top opening). */
+export const siteAreaM2 = (s: GroundSite) => (s.container ? Math.PI * (s.container.topDiameterCm / 200) ** 2 : NaN)
+
+/** Soil volume of a container, litres (cylinder; a tapered pot holds a bit less). */
+export const siteVolumeL = (s: GroundSite) => (s.container ? siteAreaM2(s) * (s.container.soilDepthCm / 100) * 1000 : NaN)
+
+/** Millilitres of water that make 1 mm over the container's surface (1 mm × 1 m² = 1 L). */
+export const mlPerMm = (s: GroundSite) => siteAreaM2(s) * 1000
+
+/** One-line description, e.g. "Basil pot · 25 × 22 cm terracotta · potting mix … · Ensenada, B.C." */
+export function describeSite(s: GroundSite, cropName: string): string {
+  const c = s.container
+  return s.kind === 'pot' && c
+    ? `${cropName} pot · ${c.topDiameterCm} × ${c.soilDepthCm} cm ${c.material}${c.drainageHoles ? ', with drainage holes' : ', no drainage holes'} · ${s.soil} · ${s.place}`
+    : `${cropName} field · ${s.soil} · ${s.place}`
+}
+
+/** "container capacity" for a pot, "field capacity" in the ground. */
+export const capacityName = (s: GroundSite) => (s.kind === 'pot' ? 'container capacity' : 'field capacity')
+
 export interface DrainageFit {
   /** Time the fitted curve starts (the wettest reading), ms. */
   t0: number
@@ -36,7 +91,9 @@ export interface DrainageFit {
   tauH: number
   /** Root-mean-square error of the fit, raw units. */
   rmse: number
-  /** False when the curve has not visibly levelled off, so fcRaw is an extrapolation. */
+  /** Drop the curve still predicts after the last reading, raw. */
+  remainingRaw: number
+  /** True when less than 5 % of the peak is left to drain; otherwise fcRaw is an extrapolation. */
   settled: boolean
 }
 
@@ -51,9 +108,9 @@ export interface GroundSummary {
   rawEnd: number
   rawMin: number
   rawMax: number
-  /** Probe wetness index: 0 = dry air, 1 = water, from the calibration. Can exceed 1 in salty, wet soil. */
-  wetStart: number
-  wetEnd: number
+  /** Wettest one-minute mean in the recording (the latest one if it repeats), raw, and when it was. */
+  peakRaw: number
+  peakMs: number
   /** Change over the last hour, raw units per hour (negative = drying). */
   lastHourRatePerH: number
   /** Mean readings per clock hour. */
@@ -100,7 +157,21 @@ export function parseNodeCsv(text: string): GroundReading[] {
   return out.sort((a, b) => a.t - b.t)
 }
 
-const wetness = (raw: number, cal: ProbeCalibration) => (cal.wet === cal.dry ? NaN : (raw - cal.dry) / (cal.wet - cal.dry))
+/**
+ * The soil's 100 %: the highest peak reading seen so far (right after a watering). A later watering
+ * that reads higher becomes the new 100 %.
+ */
+export interface SoilCapacity {
+  raw: number
+  ms: number
+  /** Recording the peak came from. */
+  label: string
+}
+
+/** A reading as a percentage of the highest peak (0 = probe in dry air). */
+export function pctOfCapacity(raw: number, capacityRaw: number, cal: ProbeCalibration = NODE_CALIBRATION): number {
+  return capacityRaw === cal.dry ? NaN : ((raw - cal.dry) / (capacityRaw - cal.dry)) * 100
+}
 
 /**
  * Fits raw(t) = fc + b·exp(−t/τ) (exponential drainage toward field capacity).
@@ -113,17 +184,16 @@ export function fitDrainage(series: { t: number; raw: number }[]): DrainageFit |
   const ys = series.map((p) => p.raw)
   const spanH = xs[xs.length - 1]
   if (spanH < 1) return null
-  let best: { fc: number; b: number; tau: number; sse: number } | null = null
-  for (let k = 0; k <= 200; k++) {
-    const tau = 0.2 * Math.pow(500, k / 200) // 0.2 h … 100 h
+  const n = xs.length
+  /** For a given τ the model is linear in fc and b: solve those by least squares. */
+  const solve = (tau: number) => {
     let se = 0, see = 0, sy = 0, sey = 0
-    const n = xs.length
     for (let i = 0; i < n; i++) {
       const e = Math.exp(-xs[i] / tau)
       se += e; see += e * e; sy += ys[i]; sey += e * ys[i]
     }
     const det = n * see - se * se
-    if (Math.abs(det) < 1e-12) continue
+    if (Math.abs(det) < 1e-12) return null
     const b = (n * sey - se * sy) / det
     const fc = (sy - b * se) / n
     let sse = 0
@@ -131,14 +201,48 @@ export function fitDrainage(series: { t: number; raw: number }[]): DrainageFit |
       const r = ys[i] - (fc + b * Math.exp(-xs[i] / tau))
       sse += r * r
     }
-    if (!best || sse < best.sse) best = { fc, b, tau, sse }
+    return { fc, b, tau, sse }
   }
-  if (!best || best.b <= 0) return null // not a drying curve
-  // Settled when the record covers at least ~1.5 time constants (≈ 78 % of the drop is seen).
-  return { t0, b: best.b, fcRaw: best.fc, tauH: best.tau, rmse: Math.sqrt(best.sse / xs.length), settled: spanH >= 1.5 * best.tau }
+  // Coarse log grid (0.2 h … 100 h, 3 % steps) to find the right valley, then golden-section
+  // search on ln τ between the neighbouring grid points for the exact minimum.
+  const STEPS = 200
+  const tauAt = (k: number) => 0.2 * Math.pow(500, k / STEPS)
+  let best: { fc: number; b: number; tau: number; sse: number } | null = null
+  let bestK = 0
+  for (let k = 0; k <= STEPS; k++) {
+    const s = solve(tauAt(k))
+    if (s && (!best || s.sse < best.sse)) {
+      best = s
+      bestK = k
+    }
+  }
+  if (!best) return null
+  const g = (Math.sqrt(5) - 1) / 2
+  let lo = Math.log(tauAt(Math.max(0, bestK - 1)))
+  let hi = Math.log(tauAt(Math.min(STEPS, bestK + 1)))
+  for (let it = 0; it < 60; it++) {
+    const c = hi - g * (hi - lo)
+    const d = lo + g * (hi - lo)
+    if ((solve(Math.exp(c))?.sse ?? Infinity) < (solve(Math.exp(d))?.sse ?? Infinity)) hi = d
+    else lo = c
+  }
+  const refined = solve(Math.exp((lo + hi) / 2))
+  if (refined && refined.sse <= best.sse) best = refined
+  if (best.b <= 0) return null // not a drying curve
+  // Settled when what is left to drain is under 5 % of the peak reading (fc + b).
+  const remaining = best.b * Math.exp(-spanH / best.tau)
+  return {
+    t0,
+    b: best.b,
+    fcRaw: best.fc,
+    tauH: best.tau,
+    rmse: Math.sqrt(best.sse / n),
+    remainingRaw: remaining,
+    settled: remaining <= 0.05 * (best.fc + best.b),
+  }
 }
 
-export function summarizeGround(readings: GroundReading[], cal: ProbeCalibration = NODE_CALIBRATION): GroundSummary | null {
+export function summarizeGround(readings: GroundReading[]): GroundSummary | null {
   if (readings.length < 2) return null
   const first = readings[0]
   const last = readings[readings.length - 1]
@@ -181,6 +285,9 @@ export function summarizeGround(readings: GroundReading[], cal: ProbeCalibration
     return v.length ? { min: Math.min(...v), max: Math.max(...v), n: v.length } : null
   }
   const raws = readings.map((r) => r.soilRaw)
+  // Drainage starts at the wettest point: before it the probe is still settling into the soil,
+  // and a later watering that reads higher starts a new drainage.
+  const peakIdx = series.reduce((bi, p, i) => (p.raw >= series[bi].raw ? i : bi), 0)
   return {
     n: readings.length,
     startMs: first.t,
@@ -191,13 +298,12 @@ export function summarizeGround(readings: GroundReading[], cal: ProbeCalibration
     rawEnd,
     rawMin: Math.min(...raws),
     rawMax: Math.max(...raws),
-    wetStart: wetness(rawStart, cal),
-    wetEnd: wetness(rawEnd, cal),
+    peakRaw: series[peakIdx].raw,
+    peakMs: series[peakIdx].t,
     lastHourRatePerH: Number.isFinite(hourAgo) ? rawEnd - hourAgo : NaN,
     hourly,
     series,
-    // Drainage starts at the wettest point: before it the probe is still settling into the soil.
-    fit: fitDrainage(series.slice(series.reduce((bi, p, i) => (p.raw > series[bi].raw ? i : bi), 0))),
+    fit: fitDrainage(series.slice(peakIdx)),
     temp: stats(readings.map((r) => r.tempC)),
     rh: stats(readings.map((r) => r.rhPct)),
   }

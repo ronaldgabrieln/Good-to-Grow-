@@ -39,6 +39,17 @@ A chat drawer on the results screen where the farmer talks through their options
 
 **Limits:** it needs internet and a key, and costs per question (2–5 API calls; the server logs token use per call). It only knows what the engine knows (coarse NASA grid, modeled soil, placeholder income index, no sensors yet). The conversation is lost on refresh and there's a single user. The number check verifies figures, not every sentence. The server has no auth, so run it locally only.
 
+## Farmer profiles: saved plans, helper memory, PDF
+
+No server of our own: the browser talks to Supabase directly with the public anon key.
+
+**Setup:** run [supabase/schema.sql](supabase/schema.sql) once in the Supabase SQL editor, then set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env` (see `.env.example`) and restart `npm run dev`. Without them the profile button and "Save this plan" stay hidden; "Download PDF" still works.
+
+- **Sign in** with a username only (top right of the results screen). A new username creates a profile; the device remembers it. **Demo only:** no password, so anyone who knows a username can open that profile. The schema file says how to switch to Supabase Auth.
+- **Save this plan** on the card stores a snapshot (`strategies.payload`, see [types.ts](src/profile/types.ts)): field inputs, crops, priorities, climate test, the plan and its metrics against the current rotation, card text, soil and climate summary. The profile drawer lists saved plans with **Open again** (re-runs the analysis at that place with the same inputs), **Download PDF** and **Delete**.
+- **Helper memory:** `recall_farmer` gives the helper the farmer's notes and saved plans; `propose_memory` asks to remember a fact with the same Allow/Deny card as plan changes. Farmers can add or delete notes in the drawer. Memory is shown to the model as the farmer's own notes, never as instructions.
+- **PDF** ([strategyPdf.ts](src/profile/strategyPdf.ts)): built in the browser with jsPDF (loaded only on click). It includes a 3-year timeline, the figures against the current rotation, the why/risks/gaps text, field and data inputs, and the method and sources, for an agronomist to review.
+
 ## The farmer's flow
 
 1. **Landing → "3d visual"** opens the planner.

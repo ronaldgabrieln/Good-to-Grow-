@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { useCallback, useRef, useState } from 'react'
 import { addToLedger, checkAnswer, type GroundingReport, type Ledger } from './grounding'
 import { PLAIN_TITLE } from '../tool/plans'
-import { runTool, type AgentContext, type Proposal } from './toolHandlers'
+import { runTool, type AgentContext, type MemoryProposal, type Proposal } from './toolHandlers'
 
 /** Tool rounds allowed per question before the agent must answer. */
 export const MAX_TOOL_ROUNDS = 8
@@ -19,6 +19,12 @@ export interface ChatProposal extends Proposal {
   textAt: number
 }
 
+/** A fact the helper asked to remember, with the farmer's answer. */
+export interface ChatMemory extends MemoryProposal {
+  status: ProposalStatus
+  textAt: number
+}
+
 export interface ChatTurn {
   id: number
   role: 'user' | 'assistant'
@@ -27,6 +33,8 @@ export interface ChatTurn {
   about?: string
   /** Assistant turns: changes the helper proposed in this answer. */
   proposals?: ChatProposal[]
+  /** Assistant turns: facts the helper asked to remember in this answer. */
+  memories?: ChatMemory[]
   steps: ChatStep[]
   sources: string[]
   status: 'working' | 'done' | 'error'
@@ -50,7 +58,10 @@ class AgentError extends Error {
 /** The app's note in front of each question, so the helper knows which plan is on screen. */
 export function screenNote(ctx: AgentContext): string {
   const mine = ctx.yours ? ` The farmer also has "Your plan" (option yours), edited from "${PLAIN_TITLE[ctx.yours.from]}".` : ''
-  return `[On screen: the farmer is looking at "${PLAIN_TITLE[ctx.viewing]}" (option ${ctx.viewing}).${mine}]`
+  const who = ctx.farmer
+    ? ` Signed in as "${ctx.farmer.username}" with a saved profile: call recall_farmer to read what you remember and their saved plans.`
+    : ' Nobody is signed in (no profile, nothing remembered).'
+  return `[On screen: the farmer is looking at "${PLAIN_TITLE[ctx.viewing]}" (option ${ctx.viewing}).${mine}${who}]`
 }
 
 /** One Messages API call through the local server, streaming text deltas. */
@@ -119,7 +130,7 @@ export function useAgent(getContext: () => AgentContext | null) {
     setTurns((all) => [
       ...all,
       { id: userId, role: 'user', text: q, about: PLAIN_TITLE[ctx0.viewing], steps: [], sources: [], status: 'done' },
-      { id, role: 'assistant', text: '', steps: [], sources: [], proposals: [], status: 'working' },
+      { id, role: 'assistant', text: '', steps: [], sources: [], proposals: [], memories: [], status: 'working' },
     ])
     setBusy(true)
     history.current.push({
@@ -136,6 +147,13 @@ export function useAgent(getContext: () => AgentContext | null) {
         if (ctrl.signal.aborted) return resolve(false)
         waiting.current.set(p.id, resolve)
         update(id, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { ...p, status: 'pending', textAt: text.length }] }))
+      })
+    // propose_memory waits the same way.
+    const requestMemoryApproval = (m: MemoryProposal) =>
+      new Promise<boolean>((resolve) => {
+        if (ctrl.signal.aborted) return resolve(false)
+        waiting.current.set(m.id, resolve)
+        update(id, (t) => ({ ...t, memories: [...(t.memories ?? []), { ...m, status: 'pending', textAt: text.length }] }))
       })
 
     let text = ''
@@ -173,7 +191,7 @@ export function useAgent(getContext: () => AgentContext | null) {
           })
           continue
         }
-        const ctx = { ...(getContext() ?? ctx0), requestApproval }
+        const ctx = { ...(getContext() ?? ctx0), requestApproval, requestMemoryApproval }
         const outputs = await Promise.all(calls.map((c) => runTool(c.name, c.input, ctx)))
         if (ctrl.signal.aborted) throw new AgentError('stopped', 'Stopped.')
         outputs.forEach((o) => {
@@ -211,7 +229,17 @@ export function useAgent(getContext: () => AgentContext | null) {
     if (!resolve) return
     waiting.current.delete(proposalId)
     const status: ProposalStatus = allowed ? 'allowed' : 'denied'
-    setTurns((all) => all.map((t) => (t.proposals?.some((p) => p.id === proposalId) ? { ...t, proposals: t.proposals.map((p) => (p.id === proposalId ? { ...p, status } : p)) } : t)))
+    setTurns((all) =>
+      all.map((t) =>
+        t.proposals?.some((p) => p.id === proposalId) || t.memories?.some((m) => m.id === proposalId)
+          ? {
+              ...t,
+              proposals: t.proposals?.map((p) => (p.id === proposalId ? { ...p, status } : p)),
+              memories: t.memories?.map((m) => (m.id === proposalId ? { ...m, status } : m)),
+            }
+          : t,
+      ),
+    )
     resolve(allowed)
   }, [])
 
@@ -232,6 +260,6 @@ export function useAgent(getContext: () => AgentContext | null) {
     setTurns([])
   }, [denyPending])
 
-  const waitingForYou = turns.some((t) => t.proposals?.some((p) => p.status === 'pending'))
+  const waitingForYou = turns.some((t) => t.proposals?.some((p) => p.status === 'pending') || t.memories?.some((m) => m.status === 'pending'))
   return { turns, busy, waitingForYou, ask, stop, reset, decide }
 }

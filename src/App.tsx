@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import './App.css'
 import Planner from './tool/Planner'
+import homeImg from './assets/home.svg'
+import { ProfileProvider } from './profile/ProfileProvider'
+
+// Hidden demo page: reachable only by typing #behind-the-scenes (no button links to it).
+const Lab = lazy(() => import('./lab/Lab'))
 
 // SVGs live in public/ (served as-is from the site root).
 const landingAsset = (name: string) =>
@@ -8,13 +13,14 @@ const landingAsset = (name: string) =>
 const storyAsset = (name: string) =>
   `/our_story_assets/${encodeURIComponent(name)}`
 
-type View = 'landing' | 'story' | 'planner'
+type View = 'landing' | 'story' | 'planner' | 'lab'
 
 // '#3d-visual' (the landing's first button) opens the rotation planner.
 const viewFromHash = (): View => {
   const h = window.location.hash
   if (h === '#our-story') return 'story'
   if (h === '#3d-visual' || h === '#planner') return 'planner'
+  if (h === '#behind-the-scenes') return 'lab'
   return 'landing'
 }
 
@@ -41,7 +47,18 @@ function App() {
 
   const isStory = view === 'story'
 
-  if (view === 'planner') return <Planner onHome={() => (window.location.hash = '')} />
+  if (view === 'planner')
+    return (
+      <ProfileProvider>
+        <Planner onHome={() => (window.location.hash = '')} />
+      </ProfileProvider>
+    )
+  if (view === 'lab')
+    return (
+      <Suspense fallback={null}>
+        <Lab onHome={() => (window.location.hash = '')} />
+      </Suspense>
+    )
 
   return (
     <main className={`scene${animating ? ' is-animating' : ''}`} data-view={view}>
@@ -91,7 +108,7 @@ function App() {
         <img className="story-heart" src={storyAsset('heart.svg')} alt="" />
         <img className="story-doodle" src={storyAsset('doodle.svg')} alt="" />
         <a className="back-btn" href="#">
-          <img src={storyAsset('back.svg')} alt="back" />
+          <img src={homeImg} alt="home" />
         </a>
       </section>
     </main>

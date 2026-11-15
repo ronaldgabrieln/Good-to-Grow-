@@ -114,7 +114,7 @@ export function MapPicker(props: {
     <div className={`picker ${props.dimmed ? 'is-dimmed' : ''}`}>
       <div ref={el} className="picker-map" />
       <div className="picker-top">
-        <BrandLogo className="picker-logo" />
+        <BrandLogo className="picker-logo" onHome={props.onHome} />
         <h1>Where is your field?</h1>
         <p>Zoom in and tap the middle of your field.</p>
         <button className="picker-locate" onClick={locate} disabled={locating}>

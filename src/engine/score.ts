@@ -63,9 +63,25 @@ interface BeamItem {
   ev: Evaluation
 }
 
+/** What happened to one combination the generator tried (reported only to the optional hooks). */
+export type TryOutcome = 'duplicate' | 'rule' | 'no-sim' | 'valid'
+
+export interface TryEvent {
+  phase: 'beam' | 'neighborhood'
+  /** Beam: slot index being filled (0–5). Neighborhood: number of slots changed (1 or 2). */
+  depth: number
+  slots: Slots
+  outcome: TryOutcome
+  reasons?: string[]
+}
+
 export interface GenerateOptions {
   beamWidth?: number
   specialistsPerCriterion?: number
+  /** Debug hook (behind-the-scenes view): called for every combination tried. No effect on results. */
+  onTry?: (e: TryEvent) => void
+  /** Debug hook: called after each slot with the partial rotations the beam kept. */
+  onDepth?: (depth: number, kept: Slots[]) => void
 }
 
 /**
@@ -92,17 +108,29 @@ export function generateCandidates(
       for (const opt of options) {
         const slots = [...item.slots, opt]
         const key = final ? canonicalKey(slots) : slots.join(',')
-        if (seen.has(key)) continue
+        if (seen.has(key)) {
+          opts.onTry?.({ phase: 'beam', depth, slots, outcome: 'duplicate' })
+          continue
+        }
         seen.add(key)
-        if (!checkRotation(slots, final).ok) continue
+        const validity = checkRotation(slots, final)
+        if (!validity.ok) {
+          opts.onTry?.({ phase: 'beam', depth, slots, outcome: 'rule', reasons: validity.reasons })
+          continue
+        }
         // Partial rotations ending in empty slots are only worth keeping if something is planted.
         const ev = evaluateRotation(ctx, slots, final)
         if (!ev) {
-          if (slots.some(Boolean)) continue
+          if (slots.some(Boolean)) {
+            opts.onTry?.({ phase: 'beam', depth, slots, outcome: 'no-sim' })
+            continue
+          }
           next.push({ slots, ev: { metrics: emptyMetrics(), events: [], windows: [] } })
+          opts.onTry?.({ phase: 'beam', depth, slots, outcome: 'valid' })
           continue
         }
         next.push({ slots, ev })
+        opts.onTry?.({ phase: 'beam', depth, slots, outcome: 'valid' })
       }
     }
     if (next.length === 0) return []
@@ -117,6 +145,7 @@ export function generateCandidates(
       for (const [, , i] of byK.slice(0, specialists)) keep.add(i)
     }
     beam = [...keep].map((i) => next[i])
+    opts.onDepth?.(depth, beam.map((b) => b.slots))
   }
   return beam.filter((b): b is BeamItem => b.ev !== null && b.ev.windows.length > 0)
 }
@@ -161,31 +190,44 @@ export function rotationDistance(a: Slots, b: Slots): number {
  * All valid rotations within `maxChanges` slot edits of the current one.
  * These are the "small change" options: easiest for a farmer to adopt.
  */
-export function neighborhood(ctx: SimContext, current: Slots, maxChanges = 2): { slots: Slots; ev: Evaluation }[] {
+export function neighborhood(
+  ctx: SimContext,
+  current: Slots,
+  maxChanges = 2,
+  onTry?: (e: TryEvent) => void,
+): { slots: Slots; ev: Evaluation }[] {
   const out: { slots: Slots; ev: Evaluation }[] = []
   const options = current.map((_, i) => candidatesForSlot(i))
   const seen = new Set<string>()
-  const tryAdd = (slots: Slots) => {
+  const tryAdd = (slots: Slots, depth: number) => {
     const key = slots.join(',')
-    if (seen.has(key)) return
+    if (seen.has(key)) {
+      onTry?.({ phase: 'neighborhood', depth, slots, outcome: 'duplicate' })
+      return
+    }
     seen.add(key)
-    if (!checkRotation(slots, true).ok) return
+    const validity = checkRotation(slots, true)
+    if (!validity.ok) {
+      onTry?.({ phase: 'neighborhood', depth, slots, outcome: 'rule', reasons: validity.reasons })
+      return
+    }
     const ev = evaluateRotation(ctx, slots, true)
     if (ev) out.push({ slots, ev })
+    onTry?.({ phase: 'neighborhood', depth, slots, outcome: ev ? 'valid' : 'no-sim' })
   }
   for (let i = 0; i < current.length; i++) {
     for (const a of options[i]) {
       if (a === current[i]) continue
       const s1 = [...current]
       s1[i] = a
-      tryAdd(s1)
+      tryAdd(s1, 1)
       if (maxChanges < 2) continue
       for (let j = i + 1; j < current.length; j++) {
         for (const b of options[j]) {
           if (b === current[j]) continue
           const s2 = [...s1]
           s2[j] = b
-          tryAdd(s2)
+          tryAdd(s2, 2)
         }
       }
     }

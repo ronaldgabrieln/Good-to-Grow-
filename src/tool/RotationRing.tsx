@@ -10,14 +10,20 @@ import centerText from '../assets/Hello (6).svg'
  * click/tap shows a little more about it in the middle.
  */
 
-// Geometry in SVG user units, centered on (0, 0).
-const R_OUT = 150
-const R_IN = 92
+// Geometry in SVG user units, centered on (0, 0). The band is thick enough to hold a crop picture.
+const R_OUT = 162
+const R_IN = 86
 const R_MID = (R_OUT + R_IN) / 2
 const GAP_NEW_YEAR = 8 // gap around each arrow point
 const GAP_SAME_YEAR = 2.5 // thin line between spring and fall
 const TIP = 20 // how far the arrow point reaches into the next year (along the middle of the ring)
 const VIEW = 250 // half-width of the viewBox, leaves room for the outside labels
+// Box each crop picture is fitted into (kept upright-ish like the season labels):
+const PIC_RADIAL = 70 // across the band
+const PIC_ALONG = 92 // along the ring
+
+/** Crop pictures live in public/fruit_assets, one file per crop id. */
+const cropPic = (id: string) => `/fruit_assets/${encodeURIComponent(id)}.svg`
 
 const YEARS = [
   { year: '#753646', spring: '#a0718d', fall: '#7b4e59' },
@@ -33,13 +39,6 @@ const deg = (d: number) => (d * Math.PI) / 180
 const pt = (r: number, a: number) => [r * Math.sin(a), -r * Math.cos(a)] as const
 /** Angle that covers `d` units of arc at radius `r` (keeps gaps the same width across the ring). */
 const along = (d: number, r: number) => d / r
-
-/** Light fills get navy crop names, dark fills white ones. */
-function isLight(hex: string) {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
-  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) > 0.3
-}
 
 /**
  * One piece of the ring between angles a0 and a1.
@@ -59,15 +58,6 @@ function segmentPath(a0: number, a1: number, notchStart: boolean, tipEnd: boolea
     `M${ox0} ${oy0}A${R_OUT} ${R_OUT} 0 0 1 ${ox1} ${oy1}` +
     `${end}L${ix1} ${iy1}A${R_IN} ${R_IN} 0 0 0 ${ix0} ${iy0}${start}Z`
   )
-}
-
-/** Splits long crop names over two lines so they fit inside a piece. */
-function nameLines(name: string): string[] {
-  if (name.length <= 10) return [name]
-  const words = name.split(/[\s/]+/).filter(Boolean)
-  if (words.length < 2) return [name.slice(0, 9) + '…']
-  const half = Math.ceil(words.length / 2)
-  return [words.slice(0, half).join(' '), words.slice(half).join(' ')]
 }
 
 function plantDate(doy: number) {
@@ -114,7 +104,6 @@ export function RotationRing(props: { slots: Slots; current?: Slots }) {
           // Season label follows the curve; flipped on the lower half so it never reads upside down.
           const [lx, ly] = pt(R_OUT + 15, mid)
           const labelRot = midDeg > 90 && midDeg < 270 ? midDeg + 180 : midDeg
-          const lines = id ? nameLines(short(id)) : ['bare']
           const season = spring ? 'spring' : 'fall'
           return (
             <g
@@ -133,19 +122,23 @@ export function RotationRing(props: { slots: Slots; current?: Slots }) {
               onKeyDown={onKey(i)}
             >
               <path d={segmentPath(a0, a1, spring, !spring || i === n - 1)} fill={fill} />
-              <text
-                x={tx}
-                y={ty - (lines.length - 1) * 7}
-                className={`ring-name ${id && !isLight(fill) ? 'on-dark' : ''}`}
-                textAnchor="middle"
-                dominantBaseline="central"
-              >
-                {lines.map((l, k) => (
-                  <tspan key={k} x={tx} dy={k === 0 ? 0 : 14}>
-                    {l}
-                  </tspan>
-                ))}
-              </text>
+              {id ? (
+                // The crop's picture, turned like the season label so it follows the ring.
+                <image
+                  className="ring-pic"
+                  href={cropPic(id)}
+                  x={tx - PIC_ALONG / 2}
+                  y={ty - PIC_RADIAL / 2}
+                  width={PIC_ALONG}
+                  height={PIC_RADIAL}
+                  preserveAspectRatio="xMidYMid meet"
+                  transform={`rotate(${labelRot} ${tx} ${ty})`}
+                />
+              ) : (
+                <text x={tx} y={ty} className="ring-name" textAnchor="middle" dominantBaseline="central">
+                  bare
+                </text>
+              )}
               <text
                 className="ring-season"
                 x={lx}
@@ -182,7 +175,8 @@ export function RotationRing(props: { slots: Slots; current?: Slots }) {
         {lit === null ? (
           <img className="ring-center-img" src={centerText} alt="3 years. Tap a piece to see more" />
         ) : (
-          <RingInfo slot={lit} id={slots[lit]} before={current?.[lit] ?? null} showChange={!!current} />
+          // keyed so the name pops in again each time a new piece lights up
+          <RingInfo key={lit} slot={lit} id={slots[lit]} before={current?.[lit] ?? null} showChange={!!current} />
         )}
       </div>
     </div>
