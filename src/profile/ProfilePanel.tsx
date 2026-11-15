@@ -3,8 +3,10 @@
 import { useState } from 'react'
 import { useProfile } from './ProfileContext'
 import { downloadStrategyPdf } from './strategyPdf'
+import { connectionInfo } from './supabase'
 import type { SavedStrategy } from './types'
 import './profile.css'
+import signInImg from '../assets/sign_in.svg'
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 const fmtNum = (v: number, d = 0) => v.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d })
@@ -13,6 +15,13 @@ const fmtNum = (v: number, d = 0) => v.toLocaleString('en-US', { maximumFraction
 export function ProfileButton({ onClick }: { onClick: () => void }) {
   const { configured, profile } = useProfile()
   if (!configured) return null
+  // Signed out: the crumpled-paper "sign in" button, sized like "change field" and "home" beside it.
+  if (!profile)
+    return (
+      <button type="button" className="home-btn bar-signin" onClick={onClick} aria-label="Sign in to save your plans">
+        <img src={signInImg} alt="Sign in" />
+      </button>
+    )
   return (
     <button type="button" className="profile-btn" onClick={onClick} aria-label={profile ? `Your profile: ${profile.username}` : 'Sign in to save your plans'}>
       <span className="profile-avatar" aria-hidden>{profile ? profile.username[0].toUpperCase() : '?'}</span>
@@ -34,6 +43,7 @@ export function SignInForm({ intro }: { intro?: string }) {
       </div>
       <p className="small muted">New username? A profile is made for it. Anyone who knows your username can open it, so don’t use your real name.</p>
       {error && <p className="profile-error">{error}</p>}
+      {error && <p className="small muted">Supabase project: {connectionInfo.host} · {connectionInfo.keyKind}</p>}
     </form>
   )
 }
